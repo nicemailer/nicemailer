@@ -10,9 +10,24 @@ import Foundation
 /// Swift note: a *protocol* is an interface (like a Rust trait). Code typed
 /// against `any CoreCalling` accepts any value conforming to it; `any` marks
 /// an existential, a box holding some conforming type chosen at runtime.
+/// An event of the core, for a waiter of [`CoreCalling.waitEvent`]: its
+/// method and its params (a `CoreClient.Event` without the sequence
+/// bookkeeping of the app's own stream).
+struct CoreEvent: Sendable {
+    let method: String
+    let params: [String: JSONValue]
+}
+
 protocol CoreCalling: AnyObject {
     /// Sends `method` with `params` and decodes the result as `R`.
     func call<R: Decodable>(_ method: String, _ params: [String: Any]) async throws -> R
+    /// The next event of the core named `method`, or `nil` when the
+    /// connection ends first — the OAuth2 sign-in waits for
+    /// `OAuthFinished` this way (`specifications/oauth2.md`, section 8).
+    /// The app reads its single event stream in one place
+    /// (`AppModel.listen`), so the client fans the events out to the
+    /// waiters; a fake core in tests pushes them (`FakeCore.pushEvent`).
+    func waitEvent(_ method: String) async -> CoreEvent?
 }
 
 extension CoreCalling {
@@ -22,4 +37,14 @@ extension CoreCalling {
     }
 }
 
-extension CoreClient: CoreCalling {}
+extension CoreClient: CoreCalling {
+    /// Registers a waiter, resumed by `notifyWaiters` on the next event of
+    /// `method`, with `nil` when the connection closes first.
+    func waitEvent(_ method: String) async -> CoreEvent? {
+        await withCheckedContinuation { cont in
+            lock.lock()
+            eventWaiters.append((method, cont))
+            lock.unlock()
+        }
+    }
+}

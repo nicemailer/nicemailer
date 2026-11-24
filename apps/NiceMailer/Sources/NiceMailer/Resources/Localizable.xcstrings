@@ -62436,118 +62436,6 @@
         }
       }
     },
-    "%@ only accepts a sign-in NiceMailer does not support yet (OAuth2). Give another IMAP server if your provider has one.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ n’accepte qu’une connexion que NiceMailer ne gère pas encore (OAuth2). Indiquez un autre serveur IMAP si votre fournisseur en propose un."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ akzeptiert nur eine Anmeldung, die NiceMailer noch nicht unterstützt (OAuth2). Gib einen anderen IMAP-Server an, falls dein Anbieter einen hat."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ solo acepta un inicio de sesión que NiceMailer aún no admite (OAuth2). Indica otro servidor IMAP si tu proveedor tiene uno."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ accetta solo un accesso che NiceMailer non supporta ancora (OAuth2). Indica un altro server IMAP se il tuo fornitore ne ha uno."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ só aceita um login que o NiceMailer ainda não suporta (OAuth2). Informe outro servidor IMAP se o seu provedor tiver um."
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ só aceita um início de sessão que o NiceMailer ainda não suporta (OAuth2). Indique outro servidor IMAP se o seu fornecedor tiver um."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ accepteert alleen een aanmelding die NiceMailer nog niet ondersteunt (OAuth2). Geef een andere IMAP-server op als je provider er een heeft."
-          }
-        },
-        "sv": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ accepterar bara en inloggning som NiceMailer inte stöder än (OAuth2). Ange en annan IMAP-server om din leverantör har en."
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ accepterer kun et login, som NiceMailer ikke understøtter endnu (OAuth2). Angiv en anden IMAP-server, hvis din udbyder har en."
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ godtar bare en pålogging som NiceMailer ikke støtter ennå (OAuth2). Oppgi en annen IMAP-server hvis leverandøren din har en."
-          }
-        },
-        "fi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ hyväksyy vain kirjautumisen, jota NiceMailer ei vielä tue (OAuth2). Anna toinen IMAP-palvelin, jos palveluntarjoajallasi on sellainen."
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ akceptuje tylko logowanie, którego NiceMailer jeszcze nie obsługuje (OAuth2). Podaj inny serwer IMAP, jeśli Twój dostawca go ma."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ принимает только вход, который NiceMailer пока не поддерживает (OAuth2). Укажите другой сервер IMAP, если он есть у вашего провайдера."
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ приймає лише вхід, який NiceMailer поки не підтримує (OAuth2). Укажіть інший сервер IMAP, якщо він є у вашого провайдера."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@はNiceMailerがまだ対応していないサインイン方法（OAuth2）しか受け付けません。プロバイダに別のIMAPサーバがあれば入力してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 只接受 NiceMailer 尚不支持的登录方式（OAuth2）。如果你的服务提供商有其他 IMAP 服务器，请输入。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 只接受 NiceMailer 尚不支援的登入方式（OAuth2）。如果你的服務供應商有其他 IMAP 伺服器，請輸入。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@은(는) NiceMailer가 아직 지원하지 않는 로그인 방식(OAuth2)만 받습니다. 서비스 제공업체에 다른 IMAP 서버가 있으면 입력하십시오."
-          }
-        }
-      }
-    },
     "%@ refused the password: %@": {
       "localizations": {
         "fr": {
@@ -74438,118 +74326,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 계정에 저장된 암호가 없음: 환경설정에서 입력하십시오"
-          }
-        }
-      }
-    },
-    "OAuth2 sign-in is not supported yet": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La connexion OAuth2 n’est pas encore prise en charge"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Anmeldung mit OAuth2 wird noch nicht unterstützt"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "El inicio de sesión OAuth2 aún no se admite"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L'accesso OAuth2 non è ancora supportato"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O login OAuth2 ainda não é suportado"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O início de sessão OAuth2 ainda não é suportado"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aanmelden met OAuth2 wordt nog niet ondersteund"
-          }
-        },
-        "sv": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inloggning med OAuth2 stöds inte än"
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Login med OAuth2 understøttes ikke endnu"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pålogging med OAuth2 støttes ikke ennå"
-          }
-        },
-        "fi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OAuth2-kirjautumista ei vielä tueta"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Logowanie OAuth2 nie jest jeszcze obsługiwane"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Вход через OAuth2 пока не поддерживается"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Вхід через OAuth2 поки не підтримується"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OAuth2でのサインインにはまだ対応していません"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚不支持 OAuth2 登录"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚不支援 OAuth2 登入"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OAuth2 로그인은 아직 지원되지 않음"
           }
         }
       }
@@ -97492,6 +97268,2358 @@
           "stringUnit": {
             "state": "translated",
             "value": "macOS 키체인에 보관됩니다. 메일함 비밀번호를 바꾸거나 새 앱 비밀번호를 만든 뒤에는 여기에 새 비밀번호를 입력하세요."
+          }
+        }
+      }
+    },
+    "The sign-in happens in your browser: NiceMailer never sees your password.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion se fait dans votre navigateur : NiceMailer ne voit jamais votre mot de passe."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Login sker i din browser: NiceMailer ser aldrig din adgangskode."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anmeldung erfolgt in Ihrem Browser: NiceMailer sieht Ihr Passwort nie."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El inicio de sesión se hace en tu navegador: NiceMailer nunca ve tu contraseña."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautuminen tapahtuu selaimessasi: NiceMailer ei koskaan näe salasanaasi."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accesso avviene nel tuo browser: NiceMailer non vede mai la tua password."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインはブラウザで行われます：NiceMailerがパスワードを見ることはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인은 브라우저에서 이루어집니다: NiceMailer는 비밀번호를 절대 보지 않습니다."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Innloggingen skjer i nettleseren din: NiceMailer ser aldri passordet ditt."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het inloggen gebeurt in uw browser: NiceMailer ziet uw wachtwoord nooit."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logowanie odbywa się w przeglądarce: NiceMailer nigdy nie widzi Twojego hasła."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O login acontece no seu navegador: o NiceMailer nunca vê sua senha."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O início de sessão acontece no seu navegador: o NiceMailer nunca vê a sua palavra-passe."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход выполняется в вашем браузере: NiceMailer никогда не видит ваш пароль."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggningen sker i din webbläsare: NiceMailer ser aldrig ditt lösenord."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід відбувається у вашому браузері: NiceMailer ніколи не бачить ваш пароль."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录在您的浏览器中完成：NiceMailer 永远不会看到您的密码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入在您的瀏覽器中完成：NiceMailer 永遠不會看到您的密碼。"
+          }
+        }
+      }
+    },
+    "Waiting for sign-in in your browser…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de la connexion dans le navigateur…"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Venter på login i browseren…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warte auf die Anmeldung im Browser…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando el inicio de sesión en tu navegador…"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Odotetaan kirjautumista selaimessa…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In attesa dell'accesso nel browser…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラウザでのサインインを待っています…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라우저에서 로그인 대기 중…"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Venter på innlogging i nettleseren…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wachten op het inloggen in uw browser…"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oczekiwanie na logowanie w przeglądarce…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguardando o login no seu navegador…"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A aguardar o início de sessão no seu navegador…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ожидание входа в браузере…"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Väntar på inloggning i webbläsaren…"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Очікування входу в браузері…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待浏览器中的登录…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待瀏覽器中的登入…"
+          }
+        }
+      }
+    },
+    "Sign in with Microsoft": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter avec Microsoft"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log ind med Microsoft"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Microsoft anmelden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión con Microsoft"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjaudu sisään Microsoft-tunnuksella"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi con Microsoft"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft でサインイン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microsoft로 로그인"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logg inn med Microsoft"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggen met Microsoft"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zaloguj się przez Microsoft"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrar com a Microsoft"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sessão com a Microsoft"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти с учётной записью Microsoft"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logga in med Microsoft"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Увійти за допомогою Microsoft"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Microsoft 登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Microsoft 登入"
+          }
+        }
+      }
+    },
+    "Reopen the page": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rouvrir la page"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Åbn siden igen"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seite erneut öffnen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a abrir la página"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avaa sivu uudelleen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riapri la pagina"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページをもう一度開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 다시 열기"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Åpne siden på nytt"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pagina opnieuw openen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otwórz stronę ponownie"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabrir a página"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reabrir a página"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть страницу снова"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öppna sidan igen"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити сторінку знову"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新打开页面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新開啟頁面"
+          }
+        }
+      }
+    },
+    "Sign in again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se reconnecter"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log ind igen"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut anmelden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión de nuevo"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjaudu uudelleen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi di nuovo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度サインイン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 로그인"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logg inn på nytt"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opnieuw inloggen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zaloguj się ponownie"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrar novamente"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sessão novamente"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войти снова"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logga in igen"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Увійти знову"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次登入"
+          }
+        }
+      }
+    },
+    "Signed in: NiceMailer connects again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté : NiceMailer se reconnecte."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logget ind: NiceMailer opretter forbindelse igen."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angemeldet: NiceMailer verbindet sich erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada: NiceMailer se conecta de nuevo."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautunut: NiceMailer yhdistää uudelleen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso effettuato: NiceMailer si ricollega."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインしました：NiceMailer が再接続します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인됨: NiceMailer가 다시 연결합니다."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logget inn: NiceMailer kobler til på nytt."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ingelogd: NiceMailer maakt opnieuw verbinding."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zalogowano: NiceMailer łączy się ponownie."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectado: o NiceMailer se reconecta."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessão iniciada: o NiceMailer volta a ligar-se."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход выполнен: NiceMailer подключается снова."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggad: NiceMailer ansluter igen."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід виконано: NiceMailer підключається знову."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登录：NiceMailer 重新连接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登入：NiceMailer 重新連線。"
+          }
+        }
+      }
+    },
+    "The sign-in failed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la connexion."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Login mislykkedes."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anmeldung ist fehlgeschlagen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al iniciar sesión."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautuminen epäonnistui."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso non riuscito."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインに失敗しました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인에 실패했습니다."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Innloggingen mislyktes."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggen mislukt."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logowanie nie powiodło się."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha no login."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha no início de sessão."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось войти."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggningen misslyckades."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося увійти."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录失败。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入失敗。"
+          }
+        }
+      }
+    },
+    "%@ only accepts OAuth2 sign-in, and NiceMailer has no application id yet (the app is not registered in Entra ID): give another IMAP server if your provider has one.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’accepte que la connexion OAuth2, et NiceMailer n’a pas encore d’identifiant d’application (l’app n’est pas inscrite dans Entra ID) : donnez un autre serveur IMAP si votre fournisseur en a un."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ accepterer kun OAuth2-login, og NiceMailer har endnu ikke et app-id (appen er ikke registreret i Entra ID): angiv en anden IMAP-server, hvis din udbyder har en."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ akzeptiert nur die OAuth2-Anmeldung, und NiceMailer hat noch keine Anwendungs-ID (die App ist nicht in Entra ID registriert): geben Sie einen anderen IMAP-Server an, falls Ihr Anbieter einen hat."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ solo acepta el inicio de sesión OAuth2 y NiceMailer aún no tiene un id de aplicación (la app no está registrada en Entra ID): indique otro servidor IMAP si su proveedor tiene uno."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ hyväksyy vain OAuth2-kirjautumisen, eikä NiceMailerilla ole vielä sovellustunnusta (sovellusta ei ole rekisteröity Entra ID:hen): anna toinen IMAP-palvelin, jos palveluntarjoajallasi on sellainen."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ accetta solo l'accesso OAuth2 e NiceMailer non ha ancora un id applicazione (l'app non è registrata in Entra ID): indica un altro server IMAP se il tuo provider ne ha uno."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ は OAuth2 サインインのみを受け付けます。NiceMailer にはまだアプリケーション ID がありません（アプリは Entra ID に登録されていません）。プロバイダーに別の IMAP サーバーがある場合は、それを指定してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@은(는) OAuth2 로그인만 지원하며 NiceMailer에 아직 앱 ID가 없습니다(앱이 Entra ID에 등록되지 않음): 제공업체에 다른 IMAP 서버가 있으면 알려 주세요."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ godtar bare OAuth2-innlogging, og NiceMailer har ennå ingen app-id (appen er ikke registrert i Entra ID): oppgi en annen IMAP-tjener hvis tilbyderen din har en."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ accepteert alleen OAuth2-inloggen en NiceMailer heeft nog geen applicatie-id (de app is niet geregistreerd in Entra ID): geef een andere IMAP-server op als uw provider die heeft."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ akceptuje tylko logowanie OAuth2, a NiceMailer nie ma jeszcze identyfikatora aplikacji (aplikacja nie jest zarejestrowana w Entra ID): podaj inny serwer IMAP, jeśli Twój dostawca go ma."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ aceita apenas login OAuth2 e o NiceMailer ainda não tem um id de aplicativo (o app não está registrado no Entra ID): informe outro servidor IMAP se seu provedor tiver um."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ só aceita início de sessão OAuth2 e o NiceMailer ainda não tem um id de aplicação (a app não está registada no Entra ID): indique outro servidor IMAP se o seu fornecedor tiver um."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ принимает только вход OAuth2, а у NiceMailer пока нет идентификатора приложения (приложение не зарегистрировано в Entra ID): укажите другой IMAP-сервер, если у вашего провайдера он есть."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ accepterar bara OAuth2-inloggning och NiceMailer har ännu inget applikations-id (appen är inte registrerad i Entra ID): ange en annan IMAP-server om din leverantör har en."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ приймає лише вхід OAuth2, а NiceMailer ще не має ідентифікатора застосунку (застосунок не зареєстровано в Entra ID): вкажіть інший IMAP-сервер, якщо ваш провайдер його має."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 仅接受 OAuth2 登录，且 NiceMailer 尚无应用程序 ID（应用未在 Entra ID 中注册）：如果您的提供商有其他 IMAP 服务器，请提供。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 只接受 OAuth2 登入，且 NiceMailer 尚無應用程式 ID（應用程式未在 Entra ID 註冊）：如果您的供應商有其他 IMAP 伺服器，請提供。"
+          }
+        }
+      }
+    },
+    "The server %@ is not a known OAuth2 server: NiceMailer sends no token to it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur %@ n’est pas un serveur OAuth2 connu : NiceMailer ne lui envoie aucun jeton"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveren %@ er ikke en kendt OAuth2-server: NiceMailer sender ikke noget token til den"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Server %@ ist kein bekannter OAuth2-Server: NiceMailer sendet ihm kein Token"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servidor %@ no es un servidor OAuth2 conocido: NiceMailer no le envía ningún token"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palvelin %@ ei ole tunnettu OAuth2-palvelin: NiceMailer ei lähetä sille tokenia"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il server %@ non è un server OAuth2 noto: NiceMailer non gli invia alcun token"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバー %@ は既知の OAuth2 サーバーではありません：NiceMailer はそこにトークンを送信しません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서버 %@은(는) 알려진 OAuth2 서버가 아닙니다: NiceMailer는 거기에 토큰을 보내지 않습니다"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveren %@ er ikke en kjent OAuth2-tjener: NiceMailer sender ikke noe token til den"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De server %@ is geen bekende OAuth2-server: NiceMailer stuurt er geen token naar"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serwer %@ nie jest znany jako serwer OAuth2: NiceMailer nie wysyła do niego żadnego tokena"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O servidor %@ não é um servidor OAuth2 conhecido: o NiceMailer não envia nenhum token a ele"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O servidor %@ não é um servidor OAuth2 conhecido: o NiceMailer não lhe envia nenhum token"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сервер %@ не является известным сервером OAuth2: NiceMailer не отправляет ему токен"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servern %@ är inte en känd OAuth2-server: NiceMailer skickar inget token till den"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сервер %@ не є відомим сервером OAuth2: NiceMailer не надсилає йому токен"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器 %@ 不是已知的 OAuth2 服务器：NiceMailer 不会向其发送令牌"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器 %@ 不是已知的 OAuth2 伺服器：NiceMailer 不會向其傳送權杖"
+          }
+        }
+      }
+    },
+    "The provider of %@ does not accept OAuth2 sign-in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le fournisseur de %@ n’accepte pas la connexion OAuth2"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Udbyderen af %@ accepterer ikke OAuth2-login"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Anbieter von %@ akzeptiert keine OAuth2-Anmeldung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El proveedor de %@ no acepta inicio de sesión OAuth2"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palveluntarjoaja %@ ei hyväksy OAuth2-kirjautumista"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il provider di %@ non accetta l'accesso OAuth2"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のプロバイダーは OAuth2 サインインに対応していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 제공업체는 OAuth2 로그인을 지원하지 않습니다"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tilbyderen av %@ godtar ikke OAuth2-innlogging"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De provider van %@ accepteert geen OAuth2-inloggen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dostawca %@ nie akceptuje logowania OAuth2"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O provedor de %@ não aceita login OAuth2"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O fornecedor de %@ não aceita início de sessão OAuth2"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Провайдер %@ не поддерживает вход OAuth2"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leverantören av %@ accepterar inte OAuth2-inloggning"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Провайдер %@ не підтримує вхід OAuth2"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的提供商不接受 OAuth2 登录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的供應商不接受 OAuth2 登入"
+          }
+        }
+      }
+    },
+    "The sign-in was refused": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a été refusée"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Login blev afvist"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anmeldung wurde abgelehnt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se rechazó el inicio de sesión"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautuminen evättiin"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accesso è stato rifiutato"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインが拒否されました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인이 거부되었습니다"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Innloggingen ble avvist"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het inloggen is geweigerd"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logowanie zostało odrzucone"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O login foi recusado"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O início de sessão foi recusado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход был отклонён"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggningen nekades"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід було відхилено"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录被拒绝"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入被拒絕"
+          }
+        }
+      }
+    },
+    "The sign-in took more than 10 minutes: try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a pris plus de 10 minutes : réessayez"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Login tog over 10 minutter: prøv igen"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anmeldung dauerte länger als 10 Minuten: versuchen Sie es erneut"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El inicio de sesión tardó más de 10 minutos: inténtelo de nuevo"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautuminen kesti yli 10 minuuttia: yritä uudelleen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accesso ha richiesto più di 10 minuti: riprova"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインに 10 分以上かかりました：もう一度お試しください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인에 10분 이상 걸렸습니다: 다시 시도하세요"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Innloggingen tok over 10 minutter: prøv igjen"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het inloggen duurde langer dan 10 minuten: probeer het opnieuw"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logowanie trwało dłużej niż 10 minut: spróbuj ponownie"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O login demorou mais de 10 minutos: tente novamente"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O início de sessão demorou mais de 10 minutos: tente novamente"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход занял больше 10 минут: попробуйте ещё раз"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggningen tog längre än 10 minuter: försök igen"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід зайняв понад 10 хвилин: спробуйте ще раз"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录耗时超过 10 分钟：请重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入耗時超過 10 分鐘：請再試一次"
+          }
+        }
+      }
+    },
+    "The sign-in was cancelled": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a été annulée"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Login blev annulleret"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Anmeldung wurde abgebrochen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se canceló el inicio de sesión"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautuminen peruttiin"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accesso è stato annullato"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインはキャンセルされました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인이 취소되었습니다"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Innloggingen ble avbrutt"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het inloggen is geannuleerd"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logowanie zostało anulowane"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O login foi cancelado"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O início de sessão foi cancelado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход был отменён"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inloggningen avbröts"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід було скасовано"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录已取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入已取消"
+          }
+        }
+      }
+    },
+    "The answer of the provider did not match the request: try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réponse du fournisseur ne correspondait pas à la demande : réessayez"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Udbyderens svar matche ikke anmodningen: prøv igen"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Antwort des Anbieters passte nicht zur Anfrage: versuchen Sie es erneut"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La respuesta del proveedor no coincidía con la solicitud: inténtelo de nuevo"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palveluntarjoajan vastaus ei vastannut pyyntöä: yritä uudelleen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La risposta del provider non corrispondeva alla richiesta: riprova"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーの応答がリクエストと一致しませんでした：もう一度お試しください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공업체의 응답이 요청과 일치하지 않습니다: 다시 시도하세요"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Svaret fra tilbyderen samsvarte ikke med forespørselen: prøv igjen"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het antwoord van de provider kwam niet overeen met het verzoek: probeer het opnieuw"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Odpowiedź dostawcy nie pasowała do żądania: spróbuj ponownie"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A resposta do provedor não correspondeu ao pedido: tente novamente"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A resposta do fornecedor não correspondeu ao pedido: tente novamente"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ответ провайдера не совпал с запросом: попробуйте ещё раз"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leverantörens svar matchade inte förfrågan: försök igen"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відповідь провайдера не збіглася із запитом: спробуйте ще раз"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供商的响应与请求不匹配：请重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "供應商的回應與請求不符：請再試一次"
+          }
+        }
+      }
+    },
+    "The account signed in is %@, not %@: choose the right account in the browser": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte connecté est %@, pas %@ : choisissez le bon compte dans le navigateur"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den indloggede konto er %@, ikke %@: vælg den rigtige konto i browseren"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das angemeldete Konto ist %@, nicht %@: wählen Sie im Browser das richtige Konto"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La cuenta con la que se inició sesión es %@, no %@: elija la cuenta correcta en el navegador"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kirjautunut tili on %@, ei %@: valitse oikea tili selaimessa"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'account con cui hai effettuato l'accesso è %@, non %@: scegli l'account giusto nel browser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインインしたアカウントは %@ ではなく %@ です：ブラウザで正しいアカウントを選んでください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인된 계정은 %@이며 %@이(가) 아닙니다: 브라우저에서 올바른 계정을 선택하세요"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den innloggede kontoen er %@, ikke %@: velg riktig konto i nettleseren"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het ingelogde account is %@, niet %@: kies het juiste account in de browser"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zalogowano na konto %@, a nie %@: wybierz właściwe konto w przeglądarce"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conta conectada é %@, não %@: escolha a conta certa no navegador"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conta com sessão iniciada é %@, não %@: escolha a conta certa no navegador"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход выполнен в учётную запись %@, а не %@: выберите правильную учётную запись в браузере"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Det inloggade kontot är %@, inte %@: välj rätt konto i webbläsaren"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вхід виконано в обліковий запис %@, а не %@: виберіть правильний обліковий запис у браузері"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录的是账户 %@，而不是 %@：请在浏览器中选择正确的账户"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入的是帳戶 %@，而不是 %@：請在瀏覽器中選擇正確的帳戶"
+          }
+        }
+      }
+    },
+    "The account %@ must be signed in again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compte %@ doit être reconnecté"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kontoen %@ skal logges ind igen"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Konto %@ muss erneut angemeldet werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay que iniciar sesión de nuevo en la cuenta %@"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tili %@ on kirjauduttava uudelleen"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "È necessario accedere di nuovo all'account %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウント %@ でもう一度サインインする必要があります"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정 %@에 다시 로그인해야 합니다"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kontoen %@ må logges inn på nytt"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account %@ moet opnieuw worden ingelogd"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konto %@ wymaga ponownego zalogowania"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "É preciso entrar novamente na conta %@"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "É necessário iniciar sessão novamente na conta %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В учётную запись %@ нужно войти снова"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kontot %@ måste loggas in igen"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В обліковий запис %@ потрібно увійти знову"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必须重新登录账户 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必須重新登入帳戶 %@"
+          }
+        }
+      }
+    },
+    "Your organization must approve NiceMailer before it can sign in (%@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre organisation doit approuver NiceMailer avant qu’il puisse se connecter (%@)"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Din organisation skal godkende NiceMailer, før den kan logge ind (%@)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ihre Organisation muss NiceMailer genehmigen, bevor die Anmeldung möglich ist (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Su organización debe aprobar NiceMailer antes de que pueda iniciar sesión (%@)"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organisaatiosi on hyväksyttävä NiceMailer, ennen kuin se voi kirjautua (%@)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tua organizzazione deve approvare NiceMailer prima che possa accedere (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "組織が NiceMailer を承認してからサインインできます (%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조직에서 NiceMailer를 승인해야 로그인할 수 있습니다 (%@)"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organisasjonen din må godkjenne NiceMailer før den kan logge inn (%@)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uw organisatie moet NiceMailer goedkeuren voordat deze kan inloggen (%@)"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Twoja organizacja musi zatwierdzić NiceMailer, zanim będzie można się zalogować (%@)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sua organização precisa aprovar o NiceMailer antes de ele entrar (%@)"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A sua organização tem de aprovar o NiceMailer antes de este poder iniciar sessão (%@)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваша организация должна одобрить NiceMailer, прежде чем он сможет войти (%@)"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Din organisation måste godkänna NiceMailer innan den kan logga in (%@)"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваша організація має схвалити NiceMailer, перш ніж він зможе увійти (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您的组织必须先批准 NiceMailer，然后它才能登录 (%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您的組織必須先核准 NiceMailer，然後它才能登入 (%@)"
+          }
+        }
+      }
+    },
+    "Your organization's rules blocked the sign-in (%@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les règles de votre organisation ont bloqué la connexion (%@)"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Din organisations regler blokerede login (%@)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Regeln Ihrer Organisation haben die Anmeldung blockiert (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las reglas de su organización bloquearon el inicio de sesión (%@)"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organisaatiosi säännöt estivät kirjautumisen (%@)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le regole della tua organizzazione hanno bloccato l'accesso (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "組織のルールによりサインインがブロックされました (%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조직의 규칙이 로그인을 차단했습니다 (%@)"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Organisasjonens regler blokkerte innloggingen (%@)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De regels van uw organisatie hebben het inloggen geblokkeerd (%@)"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zasady Twojej organizacji zablokowały logowanie (%@)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As regras da sua organização bloquearam o login (%@)"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As regras da sua organização bloquearam o início de sessão (%@)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Правила вашей организации заблокировали вход (%@)"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Din organisations regler blockerade inloggningen (%@)"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Правила вашої організації заблокували вхід (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您组织的规则阻止了登录 (%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您組織的規則封鎖了登入 (%@)"
+          }
+        }
+      }
+    },
+    "The provider refused NiceMailer's application id (%@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le fournisseur a refusé l’identifiant d’application de NiceMailer (%@)"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Udbyderen afviste NiceMailers app-id (%@)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Anbieter hat die Anwendungs-ID von NiceMailer abgelehnt (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El proveedor rechazó el id de aplicación de NiceMailer (%@)"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palveluntarjoaja hylkäsi NiceMailerin sovellustunnuksen (%@)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il provider ha rifiutato l'id applicazione di NiceMailer (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダーが NiceMailer のアプリケーション ID を拒否しました (%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공업체가 NiceMailer의 앱 ID를 거부했습니다 (%@)"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tilbyderen avviste NiceMailers app-id (%@)"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De provider heeft de applicatie-id van NiceMailer geweigerd (%@)"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dostawca odrzucił identyfikator aplikacji NiceMailer (%@)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O provedor recusou o id de aplicativo do NiceMailer (%@)"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O fornecedor recusou o id de aplicação do NiceMailer (%@)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Провайдер отклонил идентификатор приложения NiceMailer (%@)"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leverantören vägrade NiceMailers applikations-id (%@)"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Провайдер відхилив ідентифікатор застосунку NiceMailer (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供商拒绝了 NiceMailer 的应用程序 ID (%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "供應商拒絕了 NiceMailer 的應用程式 ID (%@)"
+          }
+        }
+      }
+    },
+    "Sending is disabled for this mailbox: the account can read but not send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’envoi est désactivé pour cette boîte : le compte peut lire mais pas envoyer"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afsendelse er deaktiveret for denne postkasse: kontoen kan læse, men ikke sende"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Senden ist für dieses Postfach deaktiviert: Das Konto kann lesen, aber nicht senden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El envío está desactivado para este buzón: la cuenta puede leer pero no enviar"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lähetys on poistettu käytöstä tässä postilaatikossa: tili voi lukea mutta ei lähettää"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'invio è disabilitato per questa casella: l'account può leggere ma non inviare"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このメールボックスでは送信が無効です：アカウントは受信できますが送信できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 사서함은 보내기가 비활성화되어 있습니다: 계정은 읽을 수 있지만 보낼 수 없습니다"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending er deaktivert for denne postboksen: kontoen kan lese, men ikke sende"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verzenden is uitgeschakeld voor dit mailbox: het account kan lezen maar niet verzenden"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wysyłanie jest wyłączone dla tej skrzynki: konto może odbierać, ale nie wysyłać"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O envio está desativado para esta caixa: a conta pode ler, mas não enviar"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O envio está desativado para esta caixa de correio: a conta pode ler, mas não enviar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправка отключена для этого ящика: учётная запись может читать, но не отправлять"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Det går inte att skicka från den här brevlådan: kontot kan läsa men inte skicka"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Надсилання вимкнено для цієї поштової скриньки: обліковий запис може читати, але не надсилати"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此邮箱已禁用发送：账户可以收信但不能发信"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此信箱已停用傳送：帳戶可以收信但不能傳送"
+          }
+        }
+      }
+    },
+    "Reading is disabled for this mailbox: ask the administrator to enable it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La lecture est désactivée pour cette boîte : demandez à l’administrateur de l’activer"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Læsning er deaktiveret for denne postkasse: bed administratoren om at aktivere den"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Lesen ist für dieses Postfach deaktiviert: Bitten Sie den Administrator, es zu aktivieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La lectura está desactivada para este buzón: pida al administrador que la active"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lukeminen on poistettu käytöstä tässä postilaatikossa: pyydä järjestelmänvalvojaa ottamaan se käyttöön"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La lettura è disabilitata per questa casella: chiedi all'amministratore di attivarla"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このメールボックスでは閲覧が無効です：管理者に有効にしてもらってください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 사서함은 읽기가 비활성화되어 있습니다: 관리자에게 사용하도록 요청하세요"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lesing er deaktivert for denne postboksen: be administratoren om å aktivere den"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lezen is uitgeschakeld voor dit mailbox: vraag de beheerder om het in te schakelen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Odczyt jest wyłączony dla tej skrzynki: poproś administratora o włączenie"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A leitura está desativada para esta caixa: peça ao administrador para ativá-la"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A leitura está desativada para esta caixa de correio: peça ao administrador para a ativar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтение отключено для этого ящика: попросите администратора включить его"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läsning är inaktiverad för den här brevlådan: be administratören aktivera den"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Читання вимкнено для цієї поштової скриньки: попросіть адміністратора увімкнути його"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此邮箱已禁用阅读：请要求管理员启用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此信箱已停用讀取：請要求管理員啟用"
           }
         }
       }

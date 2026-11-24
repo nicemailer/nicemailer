@@ -177,14 +177,16 @@ struct AccountSetupTests {
         #expect(core.calls("add_account").first?["display_name"] == nil)
     }
 
-    @Test func anAddressOrAPasswordMissingIsSaidWithoutAskingTheCore() async {
+    @Test func anAddressOrAPasswordMissingIsSaidWithoutTryingTheServer() async {
         fill("pierre", "secret")
         await setup.submit()
         #expect(setup.errorField == .email)
+        // The password is asked only after the discovery: it is what says
+        // whether the account is OAuth2 (no password at all).
         fill("pierre@toto.fr", "")
         await setup.submit()
         #expect(setup.errorField == .password)
-        #expect(core.calls.isEmpty)
+        #expect(core.calls.map(\.method) == ["discover_account"], "no server is tried without a password")
     }
 
     // MARK: The IMAP server
@@ -636,5 +638,148 @@ struct AccountActivationTests {
         var old = row
         old["read_only"] = nil
         #expect(try !CoreClient.decoder.decode(AccountInfo.self, from: JSONSerialization.data(withJSONObject: old)).isReadOnly)
+    }
+}
+
+/// OAuth2 accounts (`specifications/oauth2.md`): adding one signs in in
+/// the browser instead of asking a password, and an account in
+/// `oauth_reauth_needed` is signed in again from its page.
+@MainActor
+struct AccountOAuthTests {
+    /// A discovery that says OAuth2, like Microsoft's.
+    nonisolated static func oauthDiscovery() -> [String: Any] {
+        var d = AccountSetupTests.discovery(
+            imap: ["server": AccountSetupTests.server("outlook.office365.com", 993), "origin": "provider"],
+            smtp: [["server": AccountSetupTests.server("smtp.office365.com", 587, "starttls"), "origin": "provider"]],
+            provider: ["id": "hotmail.com", "name": "Outlook.com (Microsoft)", "source": "thunderbird", "matched": "outlook.com", "mx_host": NSNull(), "imap_unsupported": false]
+        )
+        d["auth"] = "oauth2"
+        d["oauth_provider"] = "microsoft"
+        return d
+    }
+
+    /// A fake core answering the OAuth2 methods of the add flow.
+    nonisolated static func core() -> FakeCore {
+        FakeCore { method, params in
+            switch method {
+            case "discover_account": return Self.oauthDiscovery()
+            case "oauth_begin": return ["flow": "f1", "url": "http://127.0.0.1:9/authorize?x=1", "provider": "microsoft"]
+            case "test_account": return AccountSetupTests.testReport()
+            case "test_smtp": return AccountSetupTests.smtpReport(params, outcomes: ["logged_in"])
+            case "add_account": return ["account_id": 7, "created": [String](), "roles": [String: String](), "correspondents": 3, "archive_queued": false]
+            default: return Fixture.answer(method, params)
+            }
+        }
+    }
+
+    /// Waits until the core was called with `method`.
+    nonisolated static func untilCalled(_ core: FakeCore, _ method: String) async {
+        while core.calls(method).isEmpty {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    @Test func anOAuth2AccountSignsInInTheBrowserThenIsAddedWithTheFlow() async {
+        let core = Self.core()
+        let setup = AccountSetup(client: core)
+        setup.email = "me@outlook.com"
+        setup.displayName = "Me"
+        // A password typed meanwhile: not sent (`oauth2.md`, section 9).
+        setup.password = "typed"
+        await setup.submit()
+        #expect(core.calls.map(\.method) == ["discover_account"])
+        #expect(setup.discovery?.isOAuth2 == true)
+        #expect(setup.oauthFlow == nil, "the sign-in button is shown, nothing else runs")
+        #expect(setup.errorField != .password, "no password is asked")
+        // The button: the flow starts; the test answers with OAuthFinished.
+        let task = Task { await setup.signIn() }
+        await Self.untilCalled(core, "oauth_begin")
+        try? await Task.sleep(for: .milliseconds(100)) // the waiter registers
+        #expect(core.calls("oauth_begin")[0]["email"] as? String == "me@outlook.com")
+        core.pushEvent("OAuthFinished", ["flow": "f1", "ok": true, "account": NSNull(), "email": "me@outlook.com", "why": NSNull()])
+        await task.value
+        #expect(setup.oauthFlow == "f1")
+        // The adding resumed: the flow's tokens, not the password.
+        let test = core.calls("test_account").first
+        #expect((test?["oauth"] as? [String: Any])?["flow"] as? String == "f1")
+        #expect((test?["password"] as? String) == "")
+        let smtp = core.calls("test_smtp").first
+        #expect((smtp?["oauth"] as? [String: Any])?["flow"] as? String == "f1")
+        #expect((smtp?["password"] as? String) == "")
+        // "On the server", then the account added with the flow.
+        await setup.submit()
+        let add = core.calls("add_account").first
+        #expect((add?["oauth"] as? [String: Any])?["flow"] as? String == "f1")
+        #expect((add?["password"] as? String) == "")
+        #expect((add?["imap"] as? [String: Any])?["host"] as? String == "outlook.office365.com")
+        #expect(setup.added?.contains("me@outlook.com") == true)
+    }
+
+    @Test func aRefusedSignInSaysTheReasonAndBringsTheButtonBack() async {
+        let core = Self.core()
+        let setup = AccountSetup(client: core)
+        setup.email = "me@outlook.com"
+        await setup.submit()
+        let task = Task { await setup.signIn() }
+        await Self.untilCalled(core, "oauth_begin")
+        try? await Task.sleep(for: .milliseconds(100)) // the waiter registers
+        core.pushEvent("OAuthFinished", ["flow": "f1", "ok": false, "account": NSNull(), "email": "me@outlook.com", "why": ["reason": "oauth_denied"]])
+        await task.value
+        #expect(setup.oauthFlow == nil && setup.oauthUrl == nil)
+        #expect(setup.error == L("The sign-in was refused"))
+        #expect(core.calls("test_account").isEmpty, "nothing is tried without a sign-in")
+    }
+
+    @Test func cancellingTheFlowEndsItQuietly() async {
+        let core = Self.core()
+        let setup = AccountSetup(client: core)
+        setup.email = "me@outlook.com"
+        await setup.submit()
+        let task = Task { await setup.signIn() }
+        await Self.untilCalled(core, "oauth_begin")
+        try? await Task.sleep(for: .milliseconds(100)) // the waiter registers
+        await setup.cancelSignIn()
+        #expect(core.calls("oauth_cancel").first?["flow"] as? String == "f1")
+        core.pushEvent("OAuthFinished", ["flow": "f1", "ok": false, "account": NSNull(), "email": "me@outlook.com", "why": ["reason": "oauth_cancelled"]])
+        await task.value
+        #expect(setup.oauthFlow == nil && setup.error == nil, "a user cancel says nothing")
+    }
+
+    @Test func anOAuth2AccountIsSignedInAgainFromItsPage() async {
+        let core = FakeCore { method, params in
+            switch method {
+            case "oauth_begin": return ["flow": "f9", "url": "http://127.0.0.1:9/a", "provider": "microsoft"]
+            default: return Fixture.answer(method, params)
+            }
+        }
+        var reloaded = false
+        let o = AccountOAuth(client: core, key: "me")
+        o.onDone = { reloaded = true }
+        let task = Task { await o.signIn() }
+        await Self.untilCalled(core, "oauth_begin")
+        try? await Task.sleep(for: .milliseconds(100)) // the waiter registers
+        #expect(core.calls("oauth_begin")[0]["account"] as? String == "me")
+        core.pushEvent("OAuthFinished", ["flow": "f9", "ok": true, "account": "me", "email": "me@outlook.com", "why": NSNull()])
+        await task.value
+        #expect(o.done == L("Signed in: NiceMailer connects again.") && o.error == nil && o.flow == nil)
+        #expect(reloaded)
+    }
+
+    @Test func aRefusalOnReconnectIsSaidWithItsReason() async {
+        let core = FakeCore { method, params in
+            switch method {
+            case "oauth_begin": return ["flow": "f9", "url": "http://127.0.0.1:9/a", "provider": "microsoft"]
+            default: return Fixture.answer(method, params)
+            }
+        }
+        let o = AccountOAuth(client: core, key: "me")
+        let task = Task { await o.signIn() }
+        await Self.untilCalled(core, "oauth_begin")
+        try? await Task.sleep(for: .milliseconds(100)) // the waiter registers
+        core.pushEvent("OAuthFinished", ["flow": "f9", "ok": false, "account": "me", "email": "me@outlook.com",
+                                        "why": ["reason": "oauth_wrong_account", "authorized": "other@outlook.com", "email": "me@outlook.com"]])
+        await task.value
+        #expect(o.error == L("The account signed in is %@, not %@: choose the right account in the browser", "other@outlook.com", "me@outlook.com"))
+        #expect(o.done == nil)
     }
 }

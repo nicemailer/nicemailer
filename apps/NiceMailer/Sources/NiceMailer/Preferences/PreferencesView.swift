@@ -227,6 +227,8 @@ private struct AccountDetail: View {
     let organize: () -> Void
     /// A new password for the account, made once for this view.
     @State private var passwordEdit: AccountPassword
+    /// A new sign-in for an OAuth2 account, made once for this view.
+    @State private var oauthEdit: AccountOAuth
 
     init(account: AccountInfo, activation: AccountActivation?, organize: @escaping () -> Void,
          client: any CoreCalling, reload: @escaping () async -> Void) {
@@ -236,6 +238,9 @@ private struct AccountDetail: View {
         let edit = AccountPassword(client: client, key: account.key, email: account.email ?? account.key)
         edit.onSaved = reload
         _passwordEdit = State(initialValue: edit)
+        let oauth = AccountOAuth(client: client, key: account.key)
+        oauth.onDone = reload
+        _oauthEdit = State(initialValue: oauth)
     }
 
     /// An archive has no server, and an account no longer in accounts.toml
@@ -252,6 +257,25 @@ private struct AccountDetail: View {
                     LabeledContent(L("State"), value: AccountRow.state(account) ?? L("Active"))
                     if let e = account.shownError {
                         Text(e).foregroundStyle(.red).textSelection(.enabled)
+                        // An OAuth2 account to sign in again: the same
+                        // browser flow as when adding it.
+                        if account.why?.values["reason"] == "oauth_reauth_needed" {
+                            if let done = oauthEdit.done {
+                                Text(done).foregroundStyle(.green)
+                            } else if let busy = oauthEdit.busy {
+                                HStack(spacing: 10) {
+                                    Text(busy).foregroundStyle(.secondary)
+                                    Button(L("Cancel")) { Task { await oauthEdit.cancel() } }
+                                        .uiTarget("prefs-reconnect-cancel")
+                                }
+                            } else {
+                                Button(L("Sign in again")) { Task { await oauthEdit.signIn() } }
+                                    .uiTarget("prefs-reconnect")
+                            }
+                            if let err = oauthEdit.error {
+                                Text(err).foregroundStyle(.red).textSelection(.enabled)
+                            }
+                        }
                     }
                 }
                 if takesPassword {
@@ -409,9 +433,17 @@ struct AddAccountForm: View {
                             .textContentType(.username)
                             .focused($focus, equals: .email)
                             .uiTarget("prefs-email")
-                        SecureField(L("Password"), text: $setup.password)
-                            .focused($focus, equals: .password)
-                            .uiTarget("prefs-password")
+                        // An OAuth2 account (the discovery said so): the
+                        // password field is replaced by the sign-in button,
+                        // the sign-in happens in the browser
+                        // (`specifications/oauth2.md`, section 9).
+                        if setup.discovery?.isOAuth2 == true {
+                            oauthSignIn
+                        } else {
+                            SecureField(L("Password"), text: $setup.password)
+                                .focused($focus, equals: .password)
+                                .uiTarget("prefs-password")
+                        }
                         TextField(L("Name shown in “From”"), text: $setup.displayName, prompt: Text(L("Your name")))
                             .focused($focus, equals: .displayName)
                             .uiTarget("prefs-name")
@@ -458,6 +490,29 @@ struct AddAccountForm: View {
     }
 
     // MARK: Sections asked for
+
+    /// Instead of the password field, for an OAuth2 account: the button
+    /// that starts the browser flow, then while it runs the waiting
+    /// message with Cancel and Reopen.
+    private var oauthSignIn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("The sign-in happens in your browser: NiceMailer never sees your password."))
+                .font(.callout).foregroundStyle(.secondary)
+            if setup.oauthFlow != nil {
+                Text(L("Waiting for sign-in in your browser…"))
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button(L("Cancel")) { Task { await setup.cancelSignIn() } }
+                        .uiTarget("prefs-signin-cancel")
+                    Button(L("Reopen the page")) { setup.reopenSignIn() }
+                        .uiTarget("prefs-signin-reopen")
+                }
+            } else {
+                Button(L("Sign in with Microsoft")) { Task { await setup.signIn() } }
+                    .uiTarget("prefs-signin-microsoft")
+            }
+        }
+    }
 
     private var imapSection: some View {
         Section {

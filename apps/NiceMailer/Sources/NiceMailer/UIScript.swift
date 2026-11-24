@@ -375,7 +375,11 @@ private final class Runner {
                 fail(lineNumber, line, "event: a method, then its params as a JSON object")
                 return
             }
-            model.handle(CoreClient.Event(method: method, epoch: "", seq: nil, params: object.compactMapValues(JSONValue.init)))
+            let ev = CoreClient.Event(method: method, epoch: "", seq: nil, params: object.compactMapValues(JSONValue.init))
+            // To the waiters of `waitEvent` too (an `OAuthFinished` ends a
+            // sign-in in the Preferences), then handled as the stream would.
+            (model.core as? CoreClient)?.notifyWaiters(ev)
+            model.handle(ev)
         case "mailbox":
             // "Change Mailbox…" with this folder, as the panel would give
             // it: a path relative to the scenario's data directory
@@ -1167,6 +1171,8 @@ private final class Runner {
             "setup_error": s.error ?? "",
             "setup_busy": s.busy ?? "",
             "setup_added": s.added ?? "",
+            "setup_oauth_flow": s.oauthFlow ?? "",
+            "setup_oauth_url": s.oauthUrl ?? "",
             "setup_calls": (UIScript.setupCore?.calls ?? []).joined(separator: " | "),
             "setup_look_only": "\(s.plan?.lookOnly == true)",
             "setup_created": s.plan?.created.joined(separator: ",") ?? "",

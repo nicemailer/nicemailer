@@ -17,6 +17,7 @@ import Foundation
 /// | `…@nosmtp.test` | no SMTP server answers: the SMTP server is asked, or "without sending" |
 /// | `…@look.test` | servers found by the domain, the SMTP server takes the IMAP password; a small Inbox: nothing asked but "On the server" |
 /// | `…@gmail.com` | as `look.test`, its provider Google's (`googlemail.com`): the app-password hint |
+/// | `…@outlook.test` | OAuth2: no password field but the "Sign in with Microsoft" button; `oauth_begin` is answered here, the `OAuthFinished` event is pushed by the script (`event OAuthFinished {…}`) |
 ///
 /// The password `wrong` is refused by every IMAP server. `set_password` is
 /// answered here too, recorded and never saved. An account
@@ -49,6 +50,10 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         case "activate_account": answer = try activate(params)
         // Never the real core's: it would write the scenario's Keychain.
         case "set_password": answer = ["changed": 0]
+        // The OAuth2 flow of `…@outlook.test`: answered here, the
+        // `OAuthFinished` event is pushed by the script (`event …`).
+        case "oauth_begin": answer = ["flow": "uiscript-flow", "url": "http://127.0.0.1:1/authorize?fake=1", "provider": "microsoft"]
+        case "oauth_cancel": answer = ["changed": 0]
         case "list_accounts":
             let r: AccountInfoListJSON = try await real.call(method, params)
             // Swift note: `withLock` holds the lock for the closure only,
@@ -78,6 +83,8 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
                 // what the user changed, short enough to read.
                 let changed = roles.keys.sorted().filter { roles[$0] != Role.name($0) }.map { "\($0):\(roles[$0]!)" }
                 parts.append("roles=\(roles.count)\(changed.isEmpty ? "" : "(" + changed.joined(separator: ",") + ")")")
+            } else if key == "oauth", let o = v as? [String: Any] {
+                parts.append("oauth=\(o["flow"] ?? "?")")
             } else if let server = v as? [String: Any] {
                 parts.append("\(key)=\(server["host"] ?? "?"):\(server["port"] ?? "?")")
             } else if key == "candidates" {
@@ -94,6 +101,11 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         AccountSetup.domain(of: p["email"] as? String ?? "")
     }
 
+    /// The events wait on the real core, answered here: forwarded.
+    func waitEvent(_ method: String) async -> CoreEvent? {
+        await real.waitEvent(method)
+    }
+
     private static func server(_ host: String, _ port: Int, _ security: String = "tls") -> [String: Any] {
         ["host": host, "port": port, "security": security]
     }
@@ -108,6 +120,14 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
         ]
         let provider: [String: Any] = ["id": d == "gmail.com" ? "googlemail.com" : d, "name": "Provider of \(d)", "source": "local", "matched": d, "mx_host": NSNull(), "imap_unsupported": false]
         switch d {
+        case "outlook.test":
+            // An OAuth2 account: the password field is replaced by the
+            // sign-in button, the flow is answered here (`oauth_begin`).
+            r["by_domain"] = ["id": "hotmail.com", "name": "Outlook.com (Microsoft)", "source": "thunderbird", "matched": d, "mx_host": NSNull(), "imap_unsupported": false]
+            r["auth"] = "oauth2"
+            r["oauth_provider"] = "microsoft"
+            r["imap"] = ["server": server("outlook.office365.com", 993), "origin": "provider"]
+            r["smtp"] = [["server": server("smtp.office365.com", 587, "starttls"), "origin": "provider"]]
         case "known.test", "other.test", "nosmtp.test", "look.test", "gmail.com":
             r["by_domain"] = provider
             r["imap"] = ["server": server("imap.\(d)", 993), "origin": "provider"]
@@ -173,6 +193,9 @@ final class UIScriptSetupCore: CoreCalling, @unchecked Sendable {
                 (outcome, detail) = smtpPassword == nil ? ("reachable", NSNull()) : ("logged_in", NSNull())
             case "smtp.nosmtp.test":
                 (outcome, detail) = ("failed", "cannot connect to smtp.nosmtp.test:465")
+            case "smtp.office365.com":
+                // outlook.test: the token is enough, no password.
+                (outcome, detail) = ("logged_in", NSNull())
             default:
                 (outcome, detail) = host.hasSuffix(".test") || host.hasSuffix(".example") ? ("logged_in", NSNull()) : ("failed", "cannot connect to \(host)")
             }

@@ -200,3 +200,34 @@ snap preferences-new-password
 preferences close
 key j
 expect selected = 1
+
+# An OAuth2 account (Microsoft): the password field is replaced by the
+# "Sign in with Microsoft" button; the browser flow is answered by the
+# scripted core (`oauth_begin`) and the `event` command (`OAuthFinished`),
+# and the finished flow takes the password's place in every call.
+preferences
+click prefs:plus
+expect prefs_selection = add
+click prefs:email
+type me@outlook.test
+expect setup_email = me@outlook.test
+click prefs:add
+expect setup_calls ~ discover_account email=me@outlook.test
+expect setup_sections =
+expect setup_oauth_flow =
+# No password field anymore: the sign-in button instead.
+expect prefs_focus != prefs-password
+click prefs:signin-microsoft
+expect setup_calls ~ oauth_begin email=me@outlook.test
+expect setup_oauth_flow = uiscript-flow
+snap preferences-oauth2-waiting
+event OAuthFinished {"flow": "uiscript-flow", "ok": true, "account": null, "email": "me@outlook.test", "why": null}
+expect setup_calls ~ test_account email=me@outlook.test imap=outlook.office365.com:993 oauth=uiscript-flow password=empty
+expect setup_calls ~ test_smtp candidates=smtp.office365.com email=me@outlook.test imap=outlook.office365.com:993 oauth=uiscript-flow password=empty
+expect setup_sections = server
+click prefs:add
+expect setup_calls ~ add_account correspondents=true email=me@outlook.test imap=outlook.office365.com:993 key=outlook oauth=uiscript-flow password=empty roles=11 smtp=smtp.office365.com:587 uidnext=20000
+expect setup_added ~ me@outlook.test added
+expect prefs_accounts = perso,fixture,outlook
+snap preferences-oauth2
+preferences close

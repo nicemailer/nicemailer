@@ -86,10 +86,12 @@ final class CoreClient: @unchecked Sendable {
     private let eventContinuation: AsyncStream<Event>.Continuation
     /// File descriptor of the socket (a small integer identifying it to the OS).
     private let fd: Int32
-    private let lock = NSLock()
+    let lock = NSLock()
     private var nextId = 1
     /// Requests awaiting their response, by id.
     private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
+    /// Waiters of one event each, by method (`waitEvent`).
+    var eventWaiters: [(method: String, continuation: CheckedContinuation<CoreEvent?, Never>)] = []
     private var closed = false
     /// The maintenance that made the core close this connection, if any:
     /// its last line, without an id (`mise-a-jour.md`, section 2).
@@ -174,6 +176,11 @@ final class CoreClient: @unchecked Sendable {
         // Continuations are resumed outside the lock, so the resumed code
         // cannot deadlock by calling back into the client.
         for (_, c) in waiting { c.resume(throwing: ConnectionError.closed) }
+        lock.lock()
+        let waiters = eventWaiters
+        eventWaiters = []
+        lock.unlock()
+        for w in waiters { w.continuation.resume(returning: nil) }
         eventContinuation.finish()
     }
 
@@ -304,13 +311,30 @@ final class CoreClient: @unchecked Sendable {
             }
         } else if let method = obj["method"] as? String {
             let params = (obj["params"] as? [String: Any]) ?? [:]
-            eventContinuation.yield(Event(
+            dispatch(Event(
                 method: method,
                 epoch: params["epoch"] as? String ?? "",
                 seq: params["seq"] as? Int,
                 params: params.compactMapValues(JSONValue.init)
             ))
         }
+    }
+
+    /// An event to the waiters (`waitEvent`) and to the app's stream.
+    func dispatch(_ ev: Event) {
+        notifyWaiters(ev)
+        eventContinuation.yield(ev)
+    }
+
+    /// An event to the waiters only: the app's stream is fed by the reader
+    /// thread, a scripted event is handled directly (`UIScript` "event").
+    func notifyWaiters(_ ev: Event) {
+        lock.lock()
+        let waiting = eventWaiters
+        eventWaiters.removeAll { $0.method != ev.method }
+        lock.unlock()
+        let core = CoreEvent(method: ev.method, params: ev.params)
+        for w in waiting where w.method == ev.method { w.continuation.resume(returning: core) }
     }
 }
 

@@ -42,6 +42,28 @@ final class FakeCore: CoreCalling, @unchecked Sendable {
         return try CoreClient.decoder.decode(R.self, from: data)
     }
 
+    /// Waiters of one event each, as `CoreClient` keeps them.
+    private var eventWaiters: [(String, CheckedContinuation<CoreEvent?, Never>)] = []
+
+    func waitEvent(_ method: String) async -> CoreEvent? {
+        await withCheckedContinuation { cont in
+            lock.lock()
+            eventWaiters.append((method, cont))
+            lock.unlock()
+        }
+    }
+
+    /// Pushes an event to the waiters of its method, as the real core's
+    /// stream would (`CoreClient.notifyWaiters`).
+    func pushEvent(_ method: String, _ params: [String: Any]) {
+        lock.lock()
+        let waiting = eventWaiters
+        eventWaiters.removeAll { $0.0 != method }
+        lock.unlock()
+        let ev = CoreEvent(method: method, params: params.compactMapValues(JSONValue.init))
+        for w in waiting where w.0 == method { w.1.resume(returning: ev) }
+    }
+
     /// Requests made with `method`, in order.
     func calls(_ method: String) -> [[String: Any]] {
         calls.filter { $0.method == method }.map(\.params)

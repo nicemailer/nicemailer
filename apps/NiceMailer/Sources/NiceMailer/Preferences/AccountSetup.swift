@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 // Adding an IMAP account from the app (`docs/accounts.md`, "In the app").
@@ -79,8 +80,24 @@ struct DiscoveryReport: Decodable, Equatable {
     let mxError: String?
     let imap: ServerCandidate?
     let smtp: [ServerCandidate]
+    /// How the account signs in: `password`, or `oauth2`
+    /// (`specifications/oauth2.md`). Optional: older answers lack it.
+    var auth: String? = nil
+    /// The OAuth2 provider, when `auth` is `oauth2` (`microsoft`).
+    var oauthProvider: String? = nil
 
     var provider: ProviderMatch? { byDomain ?? byMx }
+    /// An OAuth2 account: the password field is replaced by the sign-in
+    /// button, the sign-in happens in the browser.
+    var isOAuth2: Bool { auth == "oauth2" }
+}
+
+/// What `oauth_begin` returns (`OauthBeginResult`): the flow, the
+/// authorization URL to open in the browser, the provider.
+struct OauthBeginResult: Decodable, Equatable {
+    let flow: String
+    let url: String
+    let provider: String
 }
 
 /// A folder of the server (`ProbeFolder`).
@@ -420,6 +437,13 @@ final class AccountSetup {
     private(set) var added: String?
 
     private(set) var discovery: DiscoveryReport?
+    /// The OAuth2 flow running, while the user is in the browser: the
+    /// password field is replaced by the waiting message, with Cancel and
+    /// Reopen. Once finished, its id goes in the calls below, in place of
+    /// the password (`specifications/oauth2.md`, sections 8 and 9).
+    private(set) var oauthFlow: String?
+    /// The authorization URL of the running flow, to reopen it.
+    private(set) var oauthUrl: String?
     private(set) var test: AccountTestReport?
     /// The SMTP server to write, once known.
     private var smtpChoice: ServerParams?
@@ -450,6 +474,8 @@ final class AccountSetup {
     private func forget(from step: Step, keepingIMAP: Bool = false) {
         if step <= .discovery {
             discovery = nil
+            oauthFlow = nil
+            oauthUrl = nil
             if !keepingIMAP {
                 imapServer = nil
                 imapReason = nil
@@ -506,7 +532,6 @@ final class AccountSetup {
         guard Self.looksLikeAddress(email) else {
             return stop(.email, L("Enter the whole address, like name@example.com."))
         }
-        guard !password.isEmpty else { return stop(.password, L("Enter the password of the mailbox.")) }
         if let f = imapServer, f.params == nil {
             return stop(f.host.trimmingCharacters(in: .whitespaces).isEmpty ? .imapHost : .imapPort, L("Enter the IMAP server and its port."))
         }
@@ -524,6 +549,16 @@ final class AccountSetup {
         }
         guard let d = discovery else { return }
 
+        // OAuth2 (the discovery said so): no password is asked, nor sent —
+        // one typed meanwhile stays in the field, unused. The sign-in
+        // happens in the browser, from the button that replaced the field.
+        let oauth = d.isOAuth2
+        if !oauth {
+            guard !password.isEmpty else { return stop(.password, L("Enter the password of the mailbox.")) }
+        }
+        // A password typed meanwhile is not sent (`oauth2.md`, section 9).
+        let password = oauth ? "" : password
+
         // 2. The IMAP server: the one given, else the one found.
         let imap: ServerParams
         if let given = imapServer?.params {
@@ -535,11 +570,20 @@ final class AccountSetup {
             return
         }
 
-        // 3. The IMAP server tried with the password.
+        // 3. OAuth2: the sign-in first, in the browser. Until the flow
+        // finished, the form shows the sign-in button, not this step.
+        if oauth && oauthFlow == nil {
+            return
+        }
+
+        // 4. The IMAP server tried: with the password, or with the
+        // finished flow's tokens.
         if test == nil {
             busy = L("Connecting to %@…", imap.host)
+            var p: [String: Any] = ["email": email, "imap": imap.json, "password": password]
+            if let f = oauthFlow { p["oauth"] = ["flow": f] }
             do {
-                test = try await client.call("test_account", ["email": email, "imap": imap.json, "password": password]) as AccountTestReport
+                test = try await client.call("test_account", p) as AccountTestReport
             } catch let e as CoreClient.RPCError where e.reason == "imap_auth_refused" {
                 // The server's own words, cited (`CoreReason`). A provider
                 // that asks for an app password: the likely cause said
@@ -560,7 +604,7 @@ final class AccountSetup {
         }
         guard let t = test else { return }
 
-        // 4. The server to send from.
+        // 5. The server to send from.
         if smtpChoice == nil && !smtpSkipped {
             if sendLater {
                 smtpSkipped = true
@@ -569,7 +613,7 @@ final class AccountSetup {
             }
         }
 
-        // 5. "On the server": what the account will change there, always
+        // 6. "On the server": what the account will change there, always
         // shown once before anything is written; the user adds the
         // account from it.
         guard let plan else {
@@ -579,13 +623,14 @@ final class AccountSetup {
         }
         if let problem = plan.problem { return stop(nil, problem) }
 
-        // 6. The account.
+        // 7. The account.
         busy = L("Adding %@…", email)
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         // Swift note: `merging(_:uniquingKeysWith:)` joins two
         // dictionaries; the closure says which value wins on a shared key.
         var p: [String: Any] = ["key": d.key, "email": email, "imap": imap.json, "password": password]
             .merging(plan.params(t)) { _, new in new }
+        if let f = oauthFlow { p["oauth"] = ["flow": f] }
         if !name.isEmpty { p["display_name"] = name }
         if let s = smtpChoice {
             p["smtp"] = s.json
@@ -604,6 +649,76 @@ final class AccountSetup {
         } catch {
             stop(nil, Self.message(error))
         }
+    }
+
+    // MARK: OAuth2 sign-in
+
+    /// `oauth_begin` for the address, then the wait for the flow's
+    /// `OAuthFinished`: the URL is opened in the browser, the form says
+    /// it waits. On success the flow's id is kept and the adding resumes
+    /// where it stopped; on failure the reason is said and the button
+    /// comes back (`specifications/oauth2.md`, sections 8 and 9).
+    func signIn() async {
+        guard busy == nil, let d = discovery, d.isOAuth2 else { return }
+        error = nil
+        errorField = nil
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        busy = L("Waiting for sign-in in your browser…")
+        defer { busy = nil }
+        do {
+            let b: OauthBeginResult = try await client.call("oauth_begin", ["email": email])
+            // From now on the form shows the waiting message (and Cancel):
+            // the flow is running, even before it finished.
+            oauthFlow = b.flow
+            oauthUrl = b.url
+            if let u = URL(string: b.url) { NSWorkspace.shared.open(u) }
+            while let ev = await client.waitEvent("OAuthFinished") {
+                guard ev.params["flow"]?.string == b.flow else { continue }
+                if ev.params["ok"]?.bool == true {
+                    // `busy` down before the resume: `submit` refuses to run
+                    // while a step is marked busy.
+                    busy = nil
+                    await submit()
+                    return
+                }
+                let why = Self.whyValues(ev.params["why"])
+                // Cancelled by the user: the button just comes back.
+                if why?["reason"] != "oauth_cancelled" {
+                    error = CoreReason.text(why: why, message: nil) ?? L("The sign-in failed.")
+                }
+                oauthFlow = nil
+                oauthUrl = nil
+                return
+            }
+            // The connection ended while waiting.
+            oauthFlow = nil
+            oauthUrl = nil
+            error = L("Connection to the core lost")
+        } catch {
+            oauthFlow = nil
+            oauthUrl = nil
+            stop(nil, Self.message(error))
+        }
+    }
+
+    /// `oauth_cancel`: the flow stops; its `OAuthFinished` comes back and
+    /// ends the wait quietly (`oauth_cancelled`).
+    func cancelSignIn() async {
+        if let f = oauthFlow {
+            do { let _: IgnoredResult = try await client.call("oauth_cancel", ["flow": f]) } catch { }
+        }
+    }
+
+    /// Reopens the authorization page ("Reopen the page").
+    func reopenSignIn() {
+        if let u = oauthUrl.flatMap({ URL(string: $0) }) { NSWorkspace.shared.open(u) }
+    }
+
+    /// The `why` of an event (`{"reason": …, …values}`), as text with the
+    /// keys of the contract.
+    nonisolated static func whyValues(_ v: JSONValue?) -> [String: String]? {
+        guard case .object(let o) = v else { return nil }
+        return o
     }
 
     /// Tries the SMTP servers; `true` once one is chosen. Otherwise shows
@@ -632,8 +747,9 @@ final class AccountSetup {
         }
 
         busy = L("Trying the server to send mail…")
-        var p: [String: Any] = ["email": email, "imap": imap.json, "password": password, "candidates": candidates.map(\.json)]
+        var p: [String: Any] = ["email": email, "imap": imap.json, "password": oauthFlow != nil ? "" : password, "candidates": candidates.map(\.json)]
         if let pw = smtpPassword { p["smtp_password"] = pw }
+        if let f = oauthFlow { p["oauth"] = ["flow": f] }
         let r: SmtpTestReport
         do {
             r = try await client.call("test_smtp", p)
@@ -706,7 +822,7 @@ final class AccountSetup {
     /// Why the IMAP server must be given.
     static func whyNoIMAP(_ d: DiscoveryReport) -> String {
         if let p = d.provider, p.imapUnsupported {
-            return L("%@ only accepts a sign-in NiceMailer does not support yet (OAuth2). Give another IMAP server if your provider has one.", p.name)
+            return L("%@ only accepts OAuth2 sign-in, and NiceMailer has no application id yet (the app is not registered in Entra ID): give another IMAP server if your provider has one.", p.name)
         }
         if let e = d.mxError {
             return L("NiceMailer could not look up the mail servers of %@ (%@). Give the IMAP server.", d.domain, e)
@@ -917,6 +1033,74 @@ final class AccountPassword {
             await onSaved?()
         } catch {
             self.error = AccountSetup.message(error)
+        }
+    }
+}
+
+// MARK: - Signing in again to an OAuth2 account
+
+/// Signing in again to an OAuth2 account already set (`oauth_begin
+/// {account}`), from its page when the core says `oauth_reauth_needed`
+/// (`specifications/oauth2.md`, section 9): the same browser flow as when
+/// adding, and at the end the core stores the new tokens itself and
+/// restarts the synchronization.
+@Observable
+@MainActor
+final class AccountOAuth {
+    let key: String
+    /// The flow running: the page says it waits for the browser.
+    private(set) var flow: String?
+    private(set) var busy: String?
+    private(set) var error: String?
+    /// Said once signed in.
+    private(set) var done: String?
+
+    private let client: any CoreCalling
+    /// Called once signed in: the list reloads, with the account's new state.
+    var onDone: (() async -> Void)?
+
+    init(client: any CoreCalling, key: String) {
+        self.client = client
+        self.key = key
+    }
+
+    /// Starts the flow and waits for its `OAuthFinished`.
+    func signIn() async {
+        guard busy == nil else { return }
+        error = nil
+        done = nil
+        busy = L("Waiting for sign-in in your browser…")
+        defer { busy = nil }
+        do {
+            let b: OauthBeginResult = try await client.call("oauth_begin", ["account": key])
+            flow = b.flow
+            if let u = URL(string: b.url) { NSWorkspace.shared.open(u) }
+            while let ev = await client.waitEvent("OAuthFinished") {
+                guard ev.params["flow"]?.string == b.flow else { continue }
+                flow = nil
+                if ev.params["ok"]?.bool == true {
+                    done = L("Signed in: NiceMailer connects again.")
+                    await onDone?()
+                    return
+                }
+                let why = AccountSetup.whyValues(ev.params["why"])
+                if why?["reason"] != "oauth_cancelled" {
+                    error = CoreReason.text(why: why, message: nil) ?? L("The sign-in failed.")
+                }
+                return
+            }
+            flow = nil
+            error = L("Connection to the core lost")
+        } catch {
+            flow = nil
+            self.error = AccountSetup.message(error)
+        }
+    }
+
+    /// `oauth_cancel`: ends the wait quietly (`oauth_cancelled`).
+    func cancel() async {
+        if let f = flow {
+            do { let _: IgnoredResult = try await client.call("oauth_cancel", ["flow": f]) } catch { }
         }
     }
 }
