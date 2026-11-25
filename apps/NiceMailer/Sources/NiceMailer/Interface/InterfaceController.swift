@@ -1441,6 +1441,12 @@ final class InterfaceController {
     func label(of action: KeyAction) -> String {
         if let role = action.moveRole ?? action.gotoRole { return model.folderNames.name(role) }
         if let v = action.gotoVirtual { return model.folderNames.name(of: v) }
+        // The rows of the Show and Save menus start with a capital, as the
+        // blocks of the bar do ("Filter", "Show"…): "Text / HTML",
+        // "As PDF" (`ThreadFilter.capitalizedFirst`).
+        if action.rawValue.hasPrefix("view.") || action.rawValue.hasPrefix("save.") {
+            return ThreadFilter.capitalizedFirst(action.label)
+        }
         return action.label
     }
 

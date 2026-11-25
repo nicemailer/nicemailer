@@ -381,7 +381,7 @@ struct ThemePickerTests {
 
     @Test func theDisplayMenuOffersTheTheme() {
         let row = controller.menuEntries(.view).first { $0.key == "t" }
-        #expect(row?.label == L("theme…"))
+        #expect(row?.label == ThreadFilter.capitalizedFirst(L("theme…")))
         #expect(row?.key == "t")
     }
 

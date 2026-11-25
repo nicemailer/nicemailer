@@ -277,7 +277,7 @@ expect flash ~ opened
 # si, the last row of the menu: the PDF with the technical information
 # (the evidence); sI opens it too.
 key s
-expect menu_rows ~ i as PDF with technical information
+expect menu_rows ~ i As PDF with technical information
 key i
 expect export_files = 26
 expect flash ~ 2 mails saved

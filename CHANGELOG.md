@@ -35,6 +35,7 @@ How to write it:
 
 ### Changed
 
+- **View:** The rows of the Show (`v`) and Save (`s`) menus start with a capital: Text / HTML, One column, As PDF…
 - **Keyboard:** The flag key is `I` instead of `*`. On the title line of the open mail, the flag button now shows only its symbol and the unsubscribe button no longer shows its key ⌘U: no key, no word on the action buttons (the tooltip still says both).
 - **Reading:** The buttons of the mail's title line (unsubscribe, text | html | images) look like the commands of a reply: framed, the same height, their key in the accent colour, filled under the pointer. What the line says (the folder in Everything, the blocked pixels) now comes before the buttons, which no longer move with the length of a folder's name.
 - **AI:** Translation follows what you are doing: a mail read is translated into your language at once; a reply you wrote in your language, into the language of the mail received; a new mail, into a language chosen among the 19 of the app, in a second list ("Translate…"). Prompts with choices (Rewrite…, Translate…) are one row of the palette; typing still finds each choice.

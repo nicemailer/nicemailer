@@ -28,7 +28,7 @@ expect selected = 1
 # another writes ui.theme in config.toml and applies it at once.
 appearance light
 key v
-expect menu_rows ~ t theme…
+expect menu_rows ~ t Theme…
 key t
 expect overlay ~ themes
 expect picker_rows ~ sepia

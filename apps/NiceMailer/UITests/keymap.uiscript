@@ -24,8 +24,8 @@ expect overlay = none
 # A menu of the user, on x: its rows, a row's key runs it.
 key x
 expect overlay ~ user
-expect menu_rows ~ c to clipboard
-expect menu_rows ~ v one column
+expect menu_rows ~ c To clipboard
+expect menu_rows ~ v One column
 snap keymap-user-menu
 key v
 expect overlay = none

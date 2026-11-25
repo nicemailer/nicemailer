@@ -306,7 +306,7 @@ struct KeymapControllerTests {
         #expect(controller.overlay == .menu(.user("mine")))
         let rows = controller.menuEntries(.user("mine"))
         #expect(rows.map(\.key) == ["c", "v"])
-        #expect(rows.map(\.label) == [L("to clipboard"), L("one column")])
+        #expect(rows.map(\.label) == [ThreadFilter.capitalizedFirst(L("to clipboard")), ThreadFilter.capitalizedFirst(L("one column"))])
         press("v")
         #expect(controller.overlay == .none)
         #expect(controller.columns == 1)

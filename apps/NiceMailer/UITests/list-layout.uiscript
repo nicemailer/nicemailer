@@ -29,9 +29,9 @@ key I
 # presentation, after the theme; four blocks, set apart by a gap.
 key v
 expect overlay ~ menu
-expect menu_rows ~ h text / HTML | i remote images || 1 one column
-expect menu_rows ~ three columns || t theme… | l list: one line or three per mail | s status bar
-expect menu_rows ~ bottom, top, hidden | r Reset columns width || c sort by reception date | m sort by modification date
+expect menu_rows ~ h Text / HTML | i Remote images || 1 One column
+expect menu_rows ~ Three columns || t Theme… | l List: one line or three per mail | s Status bar
+expect menu_rows ~ bottom, top, hidden | r Reset columns width || c Sort by reception date | m Sort by modification date
 snap list-layout-menu
 key l
 expect overlay = none
