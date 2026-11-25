@@ -31,7 +31,7 @@ key v
 expect overlay ~ menu
 expect menu_rows ~ h text / HTML | i remote images || 1 one column
 expect menu_rows ~ three columns || t theme… | l list: one line or three per mail | s status bar
-expect menu_rows ~ bottom, top, hidden || c sort by reception date | m sort by modification date
+expect menu_rows ~ bottom, top, hidden | r Reset columns width || c sort by reception date | m sort by modification date
 snap list-layout-menu
 key l
 expect overlay = none
@@ -43,6 +43,13 @@ expect row_width > 400
 expect selected_snippet =
 expect selected = 1
 snap list-layout-columns
+# v r resets the list column to its standard width: half the window in
+# columns, whatever width the separator was dragged to.
+key v
+key r
+expect overlay = none
+expect list_fraction = 0.50
+expect row_width > 500
 # Back to three lines per mail: the narrow list again.
 key v
 key l
@@ -50,6 +57,11 @@ expect list_layout = stacked
 expect flash ~ three lines
 expect row_width < 360
 expect selected = 1
+# v r in stacked too: a third of the window back.
+key v
+key r
+expect list_fraction = 0.33
+expect row_width > 360
 # A narrow window: what the presentation is for.
 resize 900x800
 snap list-layout-stacked-narrow

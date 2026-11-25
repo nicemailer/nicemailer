@@ -14,6 +14,7 @@ How to write it:
 
 ### Added
 
+- **View:** In the Show menu (`v`), after the status bar: **Reset columns width** (`v` `r`) puts the list column back to its standard width — half the window with one line per mail, a third with three.
 - **Keyboard:** `h` switches the open mail between text and HTML (`v` `h` still works); the switch's tooltips now say `h`.
 - **Reader:** Three action buttons on the title line of the open mail — reply to all (`r`), reply to the sender only (`R`), forward (`F`) — drawn as their symbol, the key in the tooltip; the flag button no longer says "flag". Which controls the line shows, and in which order, is set by the theme: `reader.title_actions` in `themes/`, e.g. `[reader] title_actions = ["reply_all", "forward", "flag", "text_or_html"]` (docs/themes.md).
 - **Accounts:** Sign in to a Microsoft 365 or Outlook.com account with OAuth2, in the browser: no password is asked, and NiceMailer never sees one. In the Preferences, the password field becomes a "Sign in with Microsoft" button; in the CLI, `nicemailer account add` opens the sign-in page itself (`--no-browser` to print it only), and `nicemailer account login <key>` signs an existing account in again. The refresh token is kept in the Keychain in place of a password, and renewed by the core. The Microsoft application id is embedded in the app at build time, so adding such an account works at the first launch, with nothing to configure.

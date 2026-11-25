@@ -1044,6 +1044,7 @@ final class InterfaceController {
         case .viewToggleHtml: model.toggleBodyFormat()
         case .viewToggleRemoteImages: model.toggleRemoteImages()
         case .viewCycleStatusBar: cycleStatusBar()
+        case .viewResetColumnsWidth: resetColumnsWidth()
         case .viewChooseTheme: openPicker(.themes)
         case .viewToggleListLayout:
             listLayout = listLayout.toggled
@@ -1459,6 +1460,13 @@ final class InterfaceController {
     private func cycleStatusBar() {
         let all = StatusPosition.allCases
         statusPosition = all[(all.firstIndex(of: statusPosition)! + 1) % all.count]
+    }
+
+    /// `v` `r` (`view.reset_columns_width`): the list column back to its
+    /// standard width for the presentation shown (`ListLayout.standardFraction`),
+    /// whatever width the separator was dragged to.
+    private func resetColumnsWidth() {
+        listFraction = listLayout.standardFraction
     }
 
     /// A folder of the current view: a real folder of the account, or in

@@ -1386,7 +1386,7 @@ struct InterfaceControllerTests {
     /// block but the first.
     @Test func theDisplayMenuIsInFourBlocks() {
         let rows = controller.menuEntries(.view)
-        #expect(rows.map(\.key) == ["h", "i", "1", "2", "3", "t", "l", "s", "c", "m"])
+        #expect(rows.map(\.key) == ["h", "i", "1", "2", "3", "t", "l", "s", "r", "c", "m"])
         #expect(rows.filter(\.gapBefore).map(\.key) == ["1", "t", "c"])
     }
 
@@ -1396,6 +1396,7 @@ struct InterfaceControllerTests {
         #expect(KeyAction.viewSortReceived.viewBlock == KeyAction.viewSortModified.viewBlock)
         #expect(KeyAction.viewToggleHtml.viewBlock != KeyAction.viewOneColumn.viewBlock)
         #expect(KeyAction.viewChooseTheme.viewBlock == KeyAction.viewCycleStatusBar.viewBlock)
+        #expect(KeyAction.viewResetColumnsWidth.viewBlock == KeyAction.viewCycleStatusBar.viewBlock)
         #expect(KeyAction.mailToggleFlag.viewBlock == nil)
     }
 

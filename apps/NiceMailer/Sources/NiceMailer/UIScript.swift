@@ -1231,6 +1231,7 @@ private final class Runner {
             "selected_snippet": controller.listLayout == .stacked
                 ? ListLayout.snippetLine(m.threads.first { $0.id == m.selectedThreadId }?.snippet) : "",
             "row_width": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.width ?? 0).rounded()))",
+            "list_fraction": String(format: "%.2f", c.listFraction),
             // The folder column of the selected row in "Everything", as
             // drawn: the folder, and its account when the row has room.
             "row_folder_with_account": "\(UIScript.rowFolderWithAccount)",

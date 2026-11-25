@@ -94,6 +94,7 @@
     "view.toggle_html",
     "view.toggle_remote_images",
     "view.cycle_status_bar",
+    "view.reset_columns_width",
     "view.toggle_list_layout",
     "view.choose_theme",
     "screen.down",
@@ -906,6 +907,10 @@
         {
           "action": "view.cycle_status_bar",
           "key": "s"
+        },
+        {
+          "action": "view.reset_columns_width",
+          "key": "r"
         },
         {
           "action": "view.sort_received",

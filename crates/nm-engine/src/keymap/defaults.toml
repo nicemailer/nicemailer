@@ -216,5 +216,6 @@ i = "view.toggle_remote_images"               # remote images
 t = "view.choose_theme"                       # theme…
 l = "view.toggle_list_layout"                 # list: one line or three per mail
 s = "view.cycle_status_bar"                   # status bar: bottom, top, hidden
+r = "view.reset_columns_width"                # reset the list column to its standard width
 c = "view.sort_received"                      # sort by reception date
 m = "view.sort_modified"                      # sort by modification date

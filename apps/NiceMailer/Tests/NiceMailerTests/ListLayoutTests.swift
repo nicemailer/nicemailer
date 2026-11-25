@@ -114,4 +114,19 @@ struct ListLayoutChoiceTests {
         // The width of columns keeps the key it always had.
         #expect(defaults.double(forKey: "geek.listFraction") == 0.4)
     }
+
+    /// `v` `r` (`view.reset_columns_width`) puts the standard width back:
+    /// half the window in columns, a third in stacked.
+    @Test func resetColumnsWidthPutsTheStandardWidthBack() {
+        let defaults = TestDefaults.make()
+        let c = controller("geek", defaults: defaults)
+        c.listFraction = 0.7
+        c.perform(.viewResetColumnsWidth)
+        #expect(c.listFraction == 0.5)
+        #expect(defaults.double(forKey: "geek.listFraction") == 0.5)
+        c.perform(.viewToggleListLayout)
+        c.listFraction = 0.2
+        c.perform(.viewResetColumnsWidth)
+        #expect(c.listLayout == .stacked && abs(c.listFraction - 1.0 / 3.0) < 0.001)
+    }
 }
