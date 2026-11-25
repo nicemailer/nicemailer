@@ -184,6 +184,13 @@ struct Core {
     /// The longest line read from a client (`MAX_LINE`; the tests override
     /// it with `NICEMAILER_TEST_MAX_LINE_BYTES`).
     max_line: usize,
+    /// Permits for the connections served at once (`MAX_CONNECTIONS`); one
+    /// is held for the whole life of a connection.
+    conn_slots: Arc<Semaphore>,
+    /// How long a connection may take to send its `hello`
+    /// (`HANDSHAKE_TIMEOUT`; the tests override it with
+    /// `NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS`).
+    handshake_timeout: Duration,
     /// Immutable raw message files (`stockage-brut.md`).
     raw: RawStore,
     /// Attachments extracted from them on demand (`attachments.rs`).
@@ -364,6 +371,14 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
         max_line: std::env::var("NICEMAILER_TEST_MAX_LINE_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_LINE),
+        conn_slots: Arc::new(Semaphore::new(
+            std::env::var("NICEMAILER_TEST_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_CONNECTIONS),
+        )),
+        handshake_timeout: std::env::var("NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(HANDSHAKE_TIMEOUT),
         raw,
         attachments,
         outgoing,
@@ -491,10 +506,18 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
+                // Beyond MAX_CONNECTIONS, the connection is closed at once:
+                // the stream is dropped, the client sees a closed socket.
+                let Ok(permit) = core.conn_slots.clone().try_acquire_owned() else {
+                    eprintln!("{} connexion refusée : toutes les places de connexion sont prises", local_time());
+                    continue;
+                };
                 let core = core.clone();
                 // `tokio::spawn` starts an independent task; `async move`
                 // moves `core` and `stream` into it, so the task owns them.
                 tokio::spawn(async move {
+                    // The slot is freed when the connection ends.
+                    let _permit = permit;
                     if let Err(e) = serve(core, stream).await {
                         eprintln!("connexion fermée : {e}");
                     }
@@ -822,6 +845,17 @@ const IN_FLIGHT: usize = 64;
 /// long body, and bounds what one line can make the core allocate.
 pub(crate) const MAX_LINE: usize = 16 << 20;
 
+/// Simultaneous connections the core serves. Beyond, the new connection is
+/// closed at once: without a cap, one process could exhaust the core's file
+/// descriptors by opening connections it never uses (`architecture.md`,
+/// section 9).
+const MAX_CONNECTIONS: usize = 64;
+
+/// How long a connection may take to send its `hello`: the handshake is the
+/// first thing a client does, and a connection that never does it holds a
+/// task and a file descriptor for nothing (`architecture.md`, section 9).
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Whether a method only reads, and so may run alongside the other
 /// requests of its connection.
 ///
@@ -932,6 +966,10 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     // A maintenance that begins closes the connection (`update.rs`).
     let mut maintenance = core.maintenance.subscribe();
     let mut closed_for = None;
+    // The deadline of the handshake, fixed from the accept: a connection
+    // that never sends its `hello` is closed (`HANDSHAKE_TIMEOUT`).
+    let handshake = tokio::time::sleep(core.handshake_timeout);
+    tokio::pin!(handshake);
     loop {
         // `read_line` returns `Ok(None)` when the client closes the
         // connection. No `await` inside the `select!` branches: the
@@ -942,6 +980,10 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
                 Ok(Some(line)) => Read::Line(line),
                 Ok(None) => Read::Eof,
                 Err(e) => Read::Failed(e),
+            },
+            _ = &mut handshake, if !session.hello => {
+                eprintln!("{} connexion fermée : pas de hello dans les {:?}", local_time(), core.handshake_timeout);
+                break;
             },
             // Rust note: `wait_for` returns at once if the value already
             // matches, else when it changes to one that does. The `if`

@@ -7,6 +7,9 @@
 
 mod common;
 
+use std::io::{Read, Write};
+use std::time::Duration;
+
 use common::{Client, start_with};
 use serde_json::json;
 
@@ -37,4 +40,50 @@ fn a_line_of_exactly_the_limit_is_read() {
     c.send_line(&line);
     let answer = c.try_line().expect("an answer");
     assert_eq!(answer["result"], json!("pong"), "{answer}");
+}
+
+/// Beyond the cap, a new connection is closed at once: the client sees a
+/// closed socket, not a hang.
+#[test]
+fn connections_beyond_the_cap_are_closed_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_MAX_CONNECTIONS", "4")]);
+    // Four connections, each with its `hello`, stay open.
+    let mut held: Vec<Client> = (0..4).map(|_| Client::connect(dir.path())).collect();
+    // The fifth is closed by the core before any answer.
+    let mut extra = Client::socket(dir.path());
+    extra.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    extra.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").unwrap();
+    let mut buf = [0u8; 16];
+    let n = extra.read(&mut buf).unwrap();
+    assert_eq!(n, 0, "the core closed the connection without answering");
+    // A slot freed, a new connection is served again (the core notices the
+    // close of the dropped one first).
+    held.pop();
+    std::thread::sleep(Duration::from_millis(500));
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("ping", json!({})).unwrap(), json!("pong"));
+}
+
+/// A connection that does not send its `hello` within the timeout is
+/// closed, so it cannot hold a task and a file descriptor for nothing.
+#[test]
+fn a_connection_without_hello_is_closed_after_the_timeout() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS", "300")]);
+    let mut s = Client::socket(dir.path());
+    s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut buf = [0u8; 16];
+    let n = s.read(&mut buf).unwrap();
+    assert_eq!(n, 0, "the core closed the connection without a hello");
+}
+
+/// A `hello` sent within the timeout keeps the connection open: the normal
+/// case, covered by every other test, made explicit here with a short one.
+#[test]
+fn a_hello_within_the_timeout_keeps_the_connection_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS", "2000")]);
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("ping", json!({})).unwrap(), json!("pong"));
 }

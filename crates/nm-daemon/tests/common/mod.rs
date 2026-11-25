@@ -86,7 +86,7 @@ impl Client {
 
     /// The socket of the core of `dir`, waited for (the core needs a
     /// moment to create it).
-    fn socket(dir: &Path) -> UnixStream {
+    pub fn socket(dir: &Path) -> UnixStream {
         let deadline = Instant::now() + Duration::from_secs(10);
         let stream = loop {
             match UnixStream::connect(dir.join("core.sock")) {
