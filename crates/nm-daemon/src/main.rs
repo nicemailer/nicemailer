@@ -51,7 +51,7 @@ mod update;
 use std::fs::{self, File};
 // Unix-specific extension trait that adds `from_mode` (chmod-style
 // permissions) to `fs::Permissions`.
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -566,8 +566,17 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
 /// Creates the socket at `path`, readable by the current user only.
 fn bind(path: &Path) -> anyhow::Result<UnixListener> {
     // A socket file left behind by a crash would make `bind` fail. Thanks to
-    // the lock of the data directory, we know no other core is using it.
-    let _ = fs::remove_file(path);
+    // the lock of the data directory, we know no other core is using it. Only
+    // a socket file is removed: overwriting a regular file, or following a
+    // symbolic link, would let whoever can write in the data directory make
+    // the core destroy or redirect a file (`architecture.md`, section 9).
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_socket() => {
+            let _ = fs::remove_file(path);
+        }
+        Ok(_) => anyhow::bail!("{} existe et n'est pas un socket : le noyau refuse d'écraser autre chose", path.display()),
+        Err(_) => {}
+    }
     let listener = UnixListener::bind(path)?;
     // 0o600: only the current user can connect.
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
@@ -2675,6 +2684,34 @@ fn run_import(core: Arc<Core>, job_id: u64, opts: ImportOptions) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `bind` removes a socket file left by a crash, but refuses to touch
+    /// anything that is not a socket: a regular file is left alone, and a
+    /// symbolic link is never followed. (`tokio::test`: `bind` needs a
+    /// tokio reactor for its listener.)
+    #[tokio::test]
+    async fn bind_only_removes_a_socket_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("core.sock");
+        // A regular file in the way: bind refuses, and leaves it.
+        std::fs::write(&path, "not a socket").unwrap();
+        assert!(bind(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "not a socket");
+        std::fs::remove_file(&path).unwrap();
+        // A symbolic link, even towards a socket: refused too.
+        let other = dir.path().join("elsewhere");
+        let l = std::os::unix::net::UnixListener::bind(&other).unwrap();
+        std::os::unix::fs::symlink(&other, &path).unwrap();
+        assert!(bind(&path).is_err());
+        assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink(), "the link is not followed");
+        drop(l);
+        std::fs::remove_file(&path).unwrap();
+        // A socket left by a crash: removed, bind succeeds.
+        let l = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        drop(l);
+        assert!(path.exists(), "dropping the listener leaves the file");
+        assert!(bind(&path).is_ok());
+    }
 
     /// The token bucket lets the burst through, refuses beyond it, and
     /// refills with time, never holding more than the burst.
