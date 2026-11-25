@@ -1407,6 +1407,13 @@ final class InterfaceController {
             var block: Int?
             return rows.compactMap { row -> Entry? in
                 guard let action = KeyAction(rawValue: row.action) else { return nil }
+                // The reset of the columns width is offered only when the
+                // width is not the standard one: the row would change
+                // nothing (`ui.md`, menu `v`; `ListLayout.standardFraction`).
+                // The reset stores exactly `standardFraction` and
+                // `UserDefaults` keeps the double, so the comparison is
+                // exact, no epsilon.
+                if action == .viewResetColumnsWidth, listFraction == listLayout.standardFraction { return nil }
                 if action.isOpenVariant, let base = KeyAction(rawValue: String(row.action.dropLast(5))),
                    actions.contains(base.rawValue) {
                     return nil

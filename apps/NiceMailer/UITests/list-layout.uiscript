@@ -50,6 +50,12 @@ key r
 expect overlay = none
 expect list_fraction = 0.50
 expect row_width > 500
+# The width is the standard one now: the menu no longer offers v r, the
+# row would change nothing.
+key v
+expect menu_rows !~ r Reset columns width
+key esc
+expect overlay = none
 # Back to three lines per mail: the narrow list again.
 key v
 key l
@@ -57,11 +63,18 @@ expect list_layout = stacked
 expect flash ~ three lines
 expect row_width < 360
 expect selected = 1
-# v r in stacked too: a third of the window back.
+# v r in stacked too: a third of the window back. Its row is in the menu
+# (the width is a quarter, not the standard third)…
 key v
+expect menu_rows ~ r Reset columns width
 key r
 expect list_fraction = 0.33
 expect row_width > 360
+# …and leaves it once the width is the standard one.
+key v
+expect menu_rows !~ r Reset columns width
+key esc
+expect overlay = none
 # A narrow window: what the presentation is for.
 resize 900x800
 snap list-layout-stacked-narrow

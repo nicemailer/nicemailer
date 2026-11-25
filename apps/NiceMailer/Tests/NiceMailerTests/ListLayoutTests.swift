@@ -129,4 +129,30 @@ struct ListLayoutChoiceTests {
         c.perform(.viewResetColumnsWidth)
         #expect(c.listLayout == .stacked && abs(c.listFraction - 1.0 / 3.0) < 0.001)
     }
+
+    /// The `r` row of the Show menu (`v`) is there only when the width of
+    /// the list is not the standard one: choosing it would change nothing
+    /// otherwise (`ui.md`, menu `v`).
+    @Test func theResetRowIsInTheMenuOnlyWhenTheWidthIsNotStandard() {
+        let defaults = TestDefaults.make()
+        let c = controller("geek", defaults: defaults)
+        // A new list is at its default width (a third in columns), not the
+        // standard one (half): the row is offered.
+        #expect(c.listFraction == 0.32)
+        #expect(c.menuEntries(.view).contains { $0.key == "r" })
+        // After v r, the width is the standard one: the row is gone.
+        c.perform(.viewResetColumnsWidth)
+        #expect(c.listFraction == 0.5)
+        #expect(!c.menuEntries(.view).contains { $0.key == "r" })
+        // The separator dragged away from the standard width: back.
+        c.listFraction = 0.4
+        #expect(c.menuEntries(.view).contains { $0.key == "r" })
+        // The same in stacked: a quarter by default, a third standard.
+        c.perform(.viewToggleListLayout)
+        #expect(c.listLayout == .stacked && c.listFraction == 0.24)
+        #expect(c.menuEntries(.view).contains { $0.key == "r" })
+        c.perform(.viewResetColumnsWidth)
+        #expect(abs(c.listFraction - 1.0 / 3.0) < 0.001)
+        #expect(!c.menuEntries(.view).contains { $0.key == "r" })
+    }
 }
