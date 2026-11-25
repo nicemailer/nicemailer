@@ -123,6 +123,8 @@ struct Shared {
     secrets: Arc<dyn Secrets>,
     /// The OAuth2 state: access tokens and renewals (`oauth2.rs`).
     oauth: Arc<crate::oauth2::Oauth>,
+    /// The user's addresses, all accounts together (`Syncer::apply`).
+    own: super::Own,
     control: Arc<Control>,
     status: Arc<Mutex<AccountSync>>,
     /// The work thread has waited for the previous worker of the account:
@@ -151,6 +153,7 @@ pub(super) fn start(
     host: Arc<dyn SyncHost>,
     secrets: Arc<dyn Secrets>,
     oauth: Arc<crate::oauth2::Oauth>,
+    own: super::Own,
     wait: Vec<JoinHandle<()>>,
 ) -> Worker {
     let control = Arc::new(Control::default());
@@ -172,6 +175,7 @@ pub(super) fn start(
         host,
         secrets,
         oauth,
+        own,
         control: control.clone(),
         status: status.clone(),
         ready: Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new())),
@@ -577,10 +581,7 @@ async fn work_loop(w: &Shared) {
     let mut last_full: Option<Duration> = None;
     // Whether each folder keeps keywords, learnt by the spool's SELECTs.
     let mut keywords: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
-    // The user's own addresses: their mail is not screened, and they get
-    // no decision when they are among the recipients of a sent mail.
     let cfg = &w.spec.config;
-    let own: Vec<String> = std::iter::once(cfg.email.to_lowercase()).chain(cfg.identities.iter().map(|i| i.email.to_lowercase())).collect();
     let mut detect_tried: Option<Instant> = None;
     'connect: loop {
         if w.control.stopped() {
@@ -651,6 +652,11 @@ async fn work_loop(w: &Shared) {
                     continue 'connect;
                 }
             }
+            // The user's own addresses, those of every account: their mail
+            // is not screened, and they get no decision when they are
+            // among the recipients of a sent mail. Read at each pass, so
+            // that an identity added to another account applies at once.
+            let own = w.own.read().unwrap().clone();
             let mut ctx = Ctx {
                 host: w.host.as_ref(),
                 account_id: w.spec.account_id,

@@ -53,6 +53,7 @@ How to write it:
 - **Status bar:** A menu or picker opened by a click (the account `@`, the folder, Move…) now closes with a second click on its block, or a click on an empty part of the bar or the toolbar, as it already did with a click on the mail.
 - **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).
 - **Accounts:** A password saved by one NiceMailer build is now readable by the others. Until now, after installing a release over a development build, or the reverse, the accounts stopped syncing with "the Keychain refused the password of this account". Passwords saved before this version must be saved once more.
+- **Screening:** A mail you send from one of your accounts to another stays in the Inbox, even if that address was banned: the addresses of all your accounts (with their identities, and your archive accounts) are yours, not only those of the account that receives.
 - **Sync:** Mail of an Outlook.com or Microsoft 365 account now gets its body, instead of staying "(body not downloaded)": the server announces a size other than the mail it sends, and NiceMailer refused it.
 
 ### Removed

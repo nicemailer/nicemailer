@@ -254,6 +254,51 @@ fn what_does_not_bring_a_conversation_back() {
     assert_eq!(e.role_of(first), "todo");
 }
 
+/// The addresses of every account of the user are theirs: a mail sent
+/// from one account to another stays in the Inbox, even when the address
+/// got a rule, Banned included (on 25 November 2026 a mail from the user's
+/// own beres.net address to their Outlook account went to Banned). `own`
+/// holds the IMAP accounts and their identities (`Syncer::apply`); the
+/// archive accounts are found in the database.
+#[test]
+fn the_mail_of_any_account_of_the_user_is_never_screened() {
+    let mut e = env();
+    // Another IMAP account of the user, given by the synchronization.
+    e.own.push("me@work.example".into());
+    // An archive account, known to the database only.
+    e.s.conn()
+        .execute("INSERT INTO account (config_key, kind, address, created_by, modified_by) VALUES ('old', 'archive', 'Me@Old.example', 'cli', 'cli')", [])
+        .unwrap();
+    for addr in ["me@work.example", "me@old.example", "ME@OLD.example"] {
+        e.decide(&addr.to_lowercase(), ScreeningTarget::Banned);
+    }
+    for (i, from) in ["me@work.example", "Me <ME@old.example>"].iter().enumerate() {
+        let (id, role, _) = e.arrive("inbox", &mail(&format!("o{i}@x"), from, Some("dmarc=pass"), &[]));
+        assert_eq!((role.as_str(), e.screen_rule(id)), ("inbox", "self".to_string()), "{from}");
+    }
+    // Anyone else banned still goes to Banned.
+    e.decide("spam@far.example", ScreeningTarget::Banned);
+    let (_, role, _) = e.arrive("inbox", &mail("o9@x", "spam@far.example", Some("dmarc=pass"), &[]));
+    assert_eq!(role, "banned");
+}
+
+/// A mail of the Sent folder accepts its recipients, but never decides on
+/// an address of the user, an archive account's included.
+#[test]
+fn a_mail_found_in_sent_decides_on_no_address_of_the_user() {
+    let mut e = env();
+    e.s.conn()
+        .execute("INSERT INTO account (config_key, kind, address, created_by, modified_by) VALUES ('old', 'archive', 'me@old.example', 'cli', 'cli')", [])
+        .unwrap();
+    let h = "Message-ID: <s1@x>\r\nFrom: me@hey.example\r\nTo: me@old.example, bob@b.example\r\nSubject: Copie\r\n\r\n";
+    e.arrive("sent", h);
+    let target = |addr: &str| -> Option<String> {
+        e.s.conn().query_row("SELECT screening_target FROM address WHERE addr = ?1", [addr], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(target("bob@b.example").as_deref(), Some("inbox"));
+    assert_eq!(target("me@old.example"), None, "no decision on the user's address");
+}
+
 #[test]
 fn a_mail_found_in_sent_accepts_its_recipients_and_files_its_conversation() {
     let mut e = env();

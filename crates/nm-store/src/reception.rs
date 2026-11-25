@@ -19,7 +19,9 @@
 //! 5. else **Quarantine**.
 //!
 //! Then `A.auth_seen` becomes 1 if the verdict is `pass`. The mails of the
-//! user's own addresses stay in the Inbox. Only the mails at or above the
+//! user's own addresses stay in the Inbox, whatever their rule: the
+//! addresses of every account, IMAP (with its identities) or archive, not
+//! only of the account that receives ([`is_own`]). Only the mails at or above the
 //! Inbox's `uid_screening_start` are screened: those below were there when
 //! the account was created (`import-initial.md`, section 5).
 //!
@@ -52,8 +54,10 @@ pub struct Reception<'a> {
     pub keywords_local: bool,
     /// The account's `authserv-id`: the file's, else the detected one.
     pub authserv_id: Option<&'a str>,
-    /// The user's own addresses (the account's and its identities),
-    /// lowercase.
+    /// The user's own addresses, lowercase: those of every IMAP account
+    /// and its identities (`accounts.toml`, which the database does not
+    /// hold). The addresses of the archive accounts, which it does, are
+    /// added by [`is_own`].
     pub own: &'a [String],
     /// Inbox only: mails at or above this UID are screened. `None`: the
     /// screening of the account is suspended (account being created).
@@ -214,7 +218,11 @@ fn screen(
     };
     // The user's own mail (a copy to oneself): it stays, and brings no
     // conversation back from Todo or Waiting (`dossiers.md`).
-    if a.headers.from.as_ref().is_some_and(|f| rc.own.contains(&f.addr)) {
+    let from_own = match &a.headers.from {
+        Some(f) => is_own(tx, rc.own, &f.addr)?,
+        None => false,
+    };
+    if from_own {
         audit(tx, json!({"folder": "inbox", "rule": "self", "verdict": verdict.as_str(), "dry_run": rc.dry_run}))?;
         return Ok(inbox);
     }
@@ -344,7 +352,7 @@ pub(crate) fn accept_recipients(
     let mut folders = HashMap::new();
     let mut n = 0;
     for (id, addr) in recipients {
-        if own.contains(&addr) {
+        if is_own(tx, own, &addr)? {
             continue;
         }
         tx.prepare_cached(
@@ -499,4 +507,21 @@ pub(crate) fn file_sent_mail(
     }
     move_message(tx, sent, thread, from, to, source, &json!({"reason": "sent_new"}), changes, threads)?;
     Ok(Some(target))
+}
+
+/// Whether `addr` (lowercase) is one of the user's: in `own` (the IMAP
+/// accounts and their identities), or the address of an archive account
+/// (`account.address`). The user's own mail is never screened, even when
+/// the address got a rule: an address of one account banned by mistake
+/// would otherwise send to Banned the mail the user writes to another of
+/// their accounts. A handful of rows, read per mail that arrives.
+fn is_own(tx: &Transaction, own: &[String], addr: &str) -> Result<bool> {
+    if own.iter().any(|o| o == addr) {
+        return Ok(true);
+    }
+    Ok(tx
+        .prepare_cached("SELECT 1 FROM account WHERE address = ?1 COLLATE NOCASE LIMIT 1")?
+        .query_row([addr], |_| Ok(()))
+        .optional()?
+        .is_some())
 }
