@@ -81,7 +81,7 @@ use nm_store::screening::{MoveOptions, Outcome};
 use nm_store::{ChangeSet, Store, StoreError};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 // Two kinds of channels: `mpsc` (multi-producer, single-consumer) is a queue
 // with one reader; `broadcast` delivers each message to every receiver.
@@ -181,6 +181,9 @@ struct Core {
     events: Mutex<EventLog>,
     /// `events.client_queue`: lines a client may have waiting.
     client_queue: usize,
+    /// The longest line read from a client (`MAX_LINE`; the tests override
+    /// it with `NICEMAILER_TEST_MAX_LINE_BYTES`).
+    max_line: usize,
     /// Immutable raw message files (`stockage-brut.md`).
     raw: RawStore,
     /// Attachments extracted from them on demand (`attachments.rs`).
@@ -360,6 +363,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         themes: Mutex::new(themes),
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
+        max_line: std::env::var("NICEMAILER_TEST_MAX_LINE_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_LINE),
         raw,
         attachments,
         outgoing,
@@ -811,6 +815,13 @@ impl Drop for StoreLock<'_> {
 /// socket gets slower, it cannot make the core's memory grow.
 const IN_FLIGHT: usize = 64;
 
+/// The longest line read from a client, in bytes (`architecture.md`,
+/// section 9): a request carries text — a draft's body is the biggest of
+/// them — never a file, an attachment travels by its path, read by the core
+/// at once (`architecture.md`, section 6). 16 MiB leaves room for a very
+/// long body, and bounds what one line can make the core allocate.
+pub(crate) const MAX_LINE: usize = 16 << 20;
+
 /// Whether a method only reads, and so may run alongside the other
 /// requests of its connection.
 ///
@@ -853,6 +864,15 @@ fn runs_in_parallel(method: &str) -> bool {
             | method::THEME_GET
             | method::THEME_LIST
     )
+}
+
+/// What one read on a client's socket returned.
+enum Read {
+    Line(String),
+    /// The client closed the connection.
+    Eof,
+    /// The line is beyond `MAX_LINE`, or the connection broke.
+    Failed(anyhow::Error),
 }
 
 /// Handles one client connection until it closes.
@@ -906,18 +926,22 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
 
     // The source defaults to CLI until `hello` says otherwise.
     let mut session = Session { hello: false, source: Source::Cli, out: out.clone(), subscribed: false };
-    // `BufReader` buffers the reads; `lines()` splits the stream on newlines.
-    let mut lines = BufReader::new(read).lines();
+    // `BufReader` buffers the reads; each line is read with a limit
+    // (`read_line`), so one line cannot make the core's memory grow.
+    let mut reader = BufReader::new(read);
     // A maintenance that begins closes the connection (`update.rs`).
     let mut maintenance = core.maintenance.subscribe();
     let mut closed_for = None;
     loop {
-        // `next_line` returns `Ok(None)` when the client closes the
-        // connection.
-        let line = tokio::select! {
-            line = lines.next_line() => match line? {
-                Some(line) => line,
-                None => break,
+        // `read_line` returns `Ok(None)` when the client closes the
+        // connection. No `await` inside the `select!` branches: the
+        // `watch::Ref` of the maintenance branch is not `Send`, and an
+        // `await` there would make the whole connection task not `Send`.
+        let read = tokio::select! {
+            r = read_line(&mut reader, core.max_line) => match r {
+                Ok(Some(line)) => Read::Line(line),
+                Ok(None) => Read::Eof,
+                Err(e) => Read::Failed(e),
             },
             // Rust note: `wait_for` returns at once if the value already
             // matches, else when it changes to one that does. The `if`
@@ -928,6 +952,17 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
             // refused by the maintenance closes the connection below.
             m = maintenance.wait_for(Option::is_some), if session.hello && session.source != Source::App => {
                 closed_for = m.ok().and_then(|m| m.as_ref().map(nm_api::Maintenance::error));
+                break;
+            }
+        };
+        let line = match read {
+            Read::Line(line) => line,
+            Read::Eof => break,
+            // A line beyond the limit, or a broken connection: one error,
+            // then the connection closes.
+            Read::Failed(e) => {
+                let r = Response::err(Value::Null, RpcError::new(error_code::INVALID_REQUEST, reason::INVALID_REQUEST.with("detail", e.to_string())));
+                let _ = respond(&out, Some(r)).await;
                 break;
             }
         };
@@ -989,6 +1024,26 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     drop(out);
     let _ = writer.await;
     Ok(())
+}
+
+/// Reads one line from a client's socket, at most `max` bytes: `Ok(None)`
+/// when the client closed the connection, an error when the line is longer
+/// — one line cannot make the core's memory grow without bound
+/// (`architecture.md`, section 9).
+///
+/// Rust note: `take` wraps a reader and stops it after a number of bytes;
+/// `read_line` on it stops at the newline or at that limit, whichever comes
+/// first. A line of exactly `max` bytes plus its newline still fits.
+pub(crate) async fn read_line(reader: &mut BufReader<tokio::net::unix::OwnedReadHalf>, max: usize) -> anyhow::Result<Option<String>> {
+    let mut buf = String::new();
+    let n = (&mut *reader).take(max as u64 + 1).read_line(&mut buf).await?;
+    if n == 0 {
+        return Ok(None);
+    }
+    if buf.len() > max && !buf.ends_with('\n') {
+        anyhow::bail!("line longer than {max} bytes");
+    }
+    Ok(Some(buf))
 }
 
 /// Queues a response for the writer task; an error means the connection

@@ -54,7 +54,7 @@ use std::time::Duration;
 
 use nm_api::{CancelUpdateResult, Maintenance, MaintenanceReason, PrepareUpdateResult, Request, Response, RpcError};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::watch;
 
@@ -106,10 +106,12 @@ pub fn refusal(state: &State) -> Option<RpcError> {
 /// shows its latest progress.
 pub async fn serve_refusing(stream: UnixStream, state: watch::Receiver<Option<Maintenance>>) {
     let (read, mut write) = stream.into_split();
-    let mut lines = BufReader::new(read).lines();
-    let id = match tokio::time::timeout(FIRST_LINE, lines.next_line()).await {
+    let mut reader = BufReader::new(read);
+    // Same line limit as a serving connection (`main.rs`, `read_line`).
+    let id = match tokio::time::timeout(FIRST_LINE, crate::read_line(&mut reader, crate::MAX_LINE)).await {
         Ok(Ok(Some(line))) => serde_json::from_str::<Request>(&line).ok().and_then(|r| r.id).unwrap_or(Value::Null),
-        // Nothing sent in time, or the client left: the error alone.
+        // Nothing sent in time, a line too long, or the client left: the
+        // error alone.
         _ => Value::Null,
     };
     let Some(error) = state.borrow().as_ref().map(Maintenance::error) else { return };

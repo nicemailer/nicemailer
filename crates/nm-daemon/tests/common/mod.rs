@@ -204,6 +204,13 @@ pub fn start_logged(dir: &Path, env: &[(&str, &str)], log: Option<&Path>) -> Cor
 }
 
 impl Client {
+    /// Sends one raw line, without building a request: for the tests of
+    /// the transport itself (a line too long, a broken JSON…).
+    pub fn send_line(&mut self, line: &str) {
+        self.stream.write_all(line.as_bytes()).unwrap();
+        self.stream.write_all(b"\n").unwrap();
+    }
+
     /// Sends a request without waiting for its response; returns its id.
     /// With `response`, to send several at once and see the order in which
     /// the core answers them.
