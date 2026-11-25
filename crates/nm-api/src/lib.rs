@@ -3438,7 +3438,7 @@ pub struct Items<T> {
 
 pub mod paths {
     // `PathBuf` is an owned file system path (like `String` for text).
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// The default data directory: `~/Library/Application Support/NiceMailer`.
     pub fn default_data_dir() -> PathBuf {
@@ -3463,8 +3463,46 @@ pub mod paths {
     /// 3. the default directory.
     pub fn data_dir() -> PathBuf {
         let default = default_data_dir();
-        let chosen = std::fs::read_to_string(default.join(CHOICE_FILE)).ok();
+        let chosen = read_choice(&default);
         resolve(std::env::var_os("NICEMAILER_DATA_DIR").map(PathBuf::from), chosen.as_deref(), default)
+    }
+
+    /// The data directory chosen in the app, read from [`CHOICE_FILE`] in
+    /// `default` — only when that file is private to the current user: no
+    /// right for the group or the others, and owned by her. A file anyone
+    /// else could have written is ignored, like a missing or malformed one
+    /// (`architecture.md`, section 9): the core started by launchd follows
+    /// this file, and a forged one would point it at a mailbox of someone
+    /// else's choosing.
+    fn read_choice(default: &Path) -> Option<String> {
+        let path = default.join(CHOICE_FILE);
+        let meta = std::fs::metadata(&path).ok()?;
+        if !choice_is_private(&meta) {
+            return None;
+        }
+        std::fs::read_to_string(path).ok()
+    }
+
+    /// Whether `default`/`CHOICE_FILE` exists but is ignored because it is
+    /// not private to the current user, so that the core can say so in its
+    /// log instead of silently serving the default mailbox.
+    pub fn choice_ignored_for_rights(default: &Path) -> bool {
+        match std::fs::metadata(default.join(CHOICE_FILE)) {
+            Ok(meta) => !choice_is_private(&meta),
+            Err(_) => false,
+        }
+    }
+
+    /// The choice file must carry no right for the group or the others
+    /// (`mode & 0o077 == 0`) and belong to the effective user.
+    fn choice_is_private(meta: &std::fs::Metadata) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        if meta.mode() & 0o077 != 0 {
+            return false;
+        }
+        // `geteuid` is a C call, hence `unsafe`; it has no precondition and
+        // cannot fail.
+        meta.uid() == unsafe { libc::geteuid() }
     }
 
     /// The rule of [`data_dir`], as a pure function: the variable, else the
@@ -3497,6 +3535,28 @@ pub mod paths {
             assert_eq!(resolve(None, Some(""), d.clone()), d);
             assert_eq!(resolve(None, Some("relative/dir"), d.clone()), d);
             assert_eq!(resolve(Some(PathBuf::new()), None, d.clone()), d);
+        }
+
+        /// The choice file is followed only when it is private to the
+        /// current user: no group or other right, and her owner.
+        #[test]
+        fn the_choice_file_must_be_private_to_the_user() {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join(CHOICE_FILE);
+            std::fs::write(&file, "/tmp/elsewhere\n").unwrap();
+            // 0o644: the others may read it — ignored.
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert_eq!(read_choice(dir.path()), None);
+            assert!(choice_ignored_for_rights(dir.path()));
+            // 0o600, owned by the current user (the test runs as her): read.
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+            assert_eq!(read_choice(dir.path()).as_deref(), Some("/tmp/elsewhere\n"));
+            assert!(!choice_ignored_for_rights(dir.path()));
+            // Absent: nothing ignored, nothing read.
+            std::fs::remove_file(&file).unwrap();
+            assert_eq!(read_choice(dir.path()), None);
+            assert!(!choice_ignored_for_rights(dir.path()));
         }
     }
 

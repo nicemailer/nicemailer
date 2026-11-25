@@ -1447,9 +1447,11 @@ dependencies = [
 name = "nm-api"
 version = "0.2.1"
 dependencies = [
+ "libc",
  "nm-core",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

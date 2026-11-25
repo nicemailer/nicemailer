@@ -58,7 +58,7 @@ A mailbox is a data directory of NiceMailer (`nicemailer.db`, the raw store, the
 Which directory, for the app, the core and the CLI alike (`nm_api::paths::data_dir`, `DataDirectory.swift`):
 
 1. `NICEMAILER_DATA_DIR`, when set: it always wins (development, tests; the app then refuses to change it);
-2. the mailbox chosen: one line, an absolute path, in `~/Library/Application Support/NiceMailer/data-dir` (the core started by launchd gets no variable, so the choice is a file every program reads);
+2. the mailbox chosen: one line, an absolute path, in `~/Library/Application Support/NiceMailer/data-dir` (the core started by launchd gets no variable, so the choice is a file every program reads; the file must be private to the current user — `0600`, her owner — else it is ignored and the core logs it, so a file anyone could have written cannot point the core at another mailbox);
 3. `~/Library/Application Support/NiceMailer`.
 
 So `nicemailer` and `make core` without the variable follow the mailbox chosen in the app.
