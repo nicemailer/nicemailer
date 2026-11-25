@@ -176,7 +176,7 @@ nicemailer sync now [<key>]                 # a full pass now
 nicemailer sync verify <key> [--skip-hash] [--json]
 ```
 
-`sync verify` is the criterion of "perfect retrieval" (`plan-imap.md`, section 4): on a connection of its own, read-only, it compares each folder of the server with the database: same UIDs, same flags and keywords, and for each complete message a raw file whose hash is checked again (`--skip-hash`: only that the file exists). It exits with status 1 on any difference. Run while the synchronization works, it may see a mail the server has and the database not yet.
+`sync verify` is the criterion of "perfect retrieval" (`plan-imap.md`, section 4): on a connection of its own, read-only, it compares each folder of the server with the database: same UIDs, same flags and keywords, and for each complete message a raw file whose hash is checked again (`--skip-hash`: only that the file exists). It exits with status 1 on any difference. Run while the synchronization works, it may see a mail the server has and the database not yet. It logs in as the synchronization does: with the password, or for an OAuth2 account (Outlook.com, Microsoft 365) with an access token, renewed if needed and once more if the server refuses it.
 
 ```
 INBOX                      3 on the server,       3 here,       3 raw files checked,      0 bodies to come: ok
