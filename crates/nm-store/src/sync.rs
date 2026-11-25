@@ -461,7 +461,9 @@ impl Store {
     ///
     /// A move is recognized only when it is certain: same `Message-ID`,
     /// exactly one row of the account with it outside this folder, of the
-    /// same size, and whose UID vanished in this pass. The row then moves
+    /// same size (or, once the body is stored, the same Subject and Date:
+    /// Exchange announces another size than the bytes it sends), and whose
+    /// UID vanished in this pass. The row then moves
     /// (`folder_id`, `uid`, flags) and keeps its id, thread, tags, history;
     /// its UID leaves `deletions`. Anything else is a new row: a copy (the
     /// original stayed), or a move that cannot be told from one.
@@ -879,8 +881,9 @@ struct MovedFrom {
     thread: Option<i64>,
 }
 
-/// A row with a given `Message-ID`: id, folder, UID, size, thread.
-type Candidate = (i64, i64, Option<u32>, Option<i64>, Option<i64>);
+/// A row with a given `Message-ID`: id, folder, UID, size, thread, whether
+/// it has its body, subject, `Date` header.
+type Candidate = (i64, i64, Option<u32>, Option<i64>, Option<i64>, bool, String, Option<i64>);
 
 /// A move made elsewhere into `folder_id`: the row it was, if certain (see
 /// [`Store::insert_arrivals`]).
@@ -894,15 +897,28 @@ fn moved_here(
     let Some(msgid) = a.headers.message_id.as_deref() else { return Ok(None) };
     let rows: Vec<Candidate> = tx
         .prepare_cached(
-            "SELECT id, folder_id, uid, size, thread_id FROM message
+            "SELECT id, folder_id, uid, size, thread_id, body_state = 1, subject, date_sent FROM message
               WHERE account_id = ?1 AND message_id_hdr = ?2 AND folder_id <> ?3 LIMIT 2",
         )?
-        .query_map(params![account_id, msgid, folder_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .query_map(params![account_id, msgid, folder_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
+        })?
         .collect::<std::result::Result<_, _>>()?;
-    let [(id, from, Some(uid), size, thread)] = rows[..] else { return Ok(None) };
-    // The size of the row is RFC822.SIZE while its body is missing, the
-    // bytes stored once it came: the same for a server that counts right.
-    if size.map(|s| s as u64) != a.size {
+    // Rust note: a slice pattern; `ref` borrows the subject out of the
+    // vector instead of moving it (a `String` is not `Copy`).
+    let [(id, from, Some(uid), size, thread, has_body, ref subject, date_sent)] = rows[..] else { return Ok(None) };
+    // The size tells a different mail that has the same Message-ID (the
+    // copy a mailing list sends back, with its footer). The size of the
+    // row is RFC822.SIZE while its body is missing, then the bytes
+    // stored. Those are what a server that counts right announces, but
+    // not Exchange Online, which announces another size for almost every
+    // mail (`docs/sync.md`, "Bodies"): every move made on the phone
+    // would then be a deletion and a new mail, which loses the tags and
+    // the history and downloads the body again. For a row with its body,
+    // a size that differs is therefore not enough to refuse: the Subject
+    // and the Date headers decide, which a list that changes the mail
+    // usually changes too (a `[list]` prefix).
+    if size.map(|s| s as u64) != a.size && !(has_body && *subject == a.headers.subject && date_sent == a.headers.date_sent) {
         return Ok(None);
     }
     if !deletions.get(&from).is_some_and(|d| d.contains(&uid)) {

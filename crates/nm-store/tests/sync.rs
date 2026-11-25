@@ -6,8 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use nm_core::Source;
-use nm_store::ingest::parse_headers;
-use nm_store::insert::Inserter;
+use nm_store::ingest::{parse, parse_headers};
+use nm_store::insert::{Body, Completed, Inserter};
+use nm_store::raw::RawStore;
+use nm_store::ChangeSet;
 use nm_store::sync::{Arrival, FlagUpdate, FolderState, ListedFolder, ServerFlags};
 use nm_store::Store;
 use nm_store::reception::Reception;
@@ -185,6 +187,66 @@ fn a_copy_or_an_uncertain_move_is_a_new_message() {
     assert_eq!((got.moved, got.inserted), (0, 1));
     assert_eq!(deletions[&inbox2].len(), 1, "still to delete");
     let _ = inbox;
+}
+
+/// The mail of `with_one_mail` with its body: `raw`, whose size the row
+/// then holds (the bytes stored), whatever RFC822.SIZE said.
+fn give_body(s: &mut Store, ins: &mut Inserter, raw: &[u8]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let store = RawStore::open(dir.path()).unwrap();
+    let mut w = store.writer(true).unwrap();
+    w.write(raw).unwrap();
+    let f = w.finish(None).unwrap();
+    let parsed = parse(&f.plain.unwrap());
+    let id: i64 = s.conn().query_row("SELECT id FROM message", [], |r| r.get(0)).unwrap();
+    let mut changes = ChangeSet::default();
+    let tx = s.transaction().unwrap();
+    assert_eq!(ins.complete(&tx, id, Body { written: &f.written, parsed: &parsed }, &mut changes).unwrap(), Completed::Done);
+    ins.commit(tx, &mut changes).unwrap();
+    dir
+}
+
+/// Exchange Online announces an RFC822.SIZE other than the bytes it sends
+/// (`docs/sync.md`, "Bodies"): once the body is stored, the size of the row
+/// no longer matches what the server announces for the moved mail. The
+/// Subject and the Date then decide (`docs/sync.md`, "Moves made
+/// elsewhere").
+#[test]
+fn a_move_on_exchange_keeps_the_message_once_its_body_is_stored() {
+    let (mut s, acc, inbox, archive, mut ins) = with_one_mail();
+    let raw = b"Message-ID: <m1@x>\r\nFrom: alice@a.example\r\nSubject: Devis m1@x\r\n\r\nLe devis.\r\n";
+    let _raw = give_body(&mut s, &mut ins, raw);
+    let id: i64 = s.conn().query_row("SELECT id FROM message", [], |r| r.get(0)).unwrap();
+    assert_eq!(count(&s, "SELECT size FROM message"), raw.len() as i64, "the bytes stored");
+
+    // Moved by the phone: announced with the size Exchange gives, 1000.
+    let mut deletions = BTreeMap::from([(inbox, BTreeSet::from([7]))]);
+    let (got, _) = s.insert_arrivals(&mut ins, acc, archive, &[arrival(3, "m1@x", 1000, &[])], &mut deletions, &Reception::plain(true)).unwrap();
+    assert_eq!((got.moved, got.inserted), (1, 0));
+    assert!(deletions[&inbox].is_empty());
+    assert_eq!(count(&s, "SELECT count(*) FROM message"), 1);
+    let (fid, state): (i64, i64) = s.conn().query_row("SELECT folder_id, body_state FROM message WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!((fid, state), (archive, 1), "same id, its body kept");
+}
+
+/// The guard the size gave stays, with the headers: a different mail with
+/// the same Message-ID (a list's copy, its subject prefixed) is a new row,
+/// and so is one whose Date differs.
+#[test]
+fn another_subject_or_date_with_another_size_is_a_new_message() {
+    for header in [
+        "Message-ID: <m1@x>\r\nFrom: alice@a.example\r\nSubject: [liste] Devis m1@x\r\n\r\n",
+        "Message-ID: <m1@x>\r\nFrom: alice@a.example\r\nSubject: Devis m1@x\r\nDate: Thu, 05 Nov 2026 10:00:00 +0000\r\n\r\n",
+    ] {
+        let (mut s, acc, inbox, archive, mut ins) = with_one_mail();
+        let _raw = give_body(&mut s, &mut ins, b"Message-ID: <m1@x>\r\nFrom: alice@a.example\r\nSubject: Devis m1@x\r\n\r\nLe devis.\r\n");
+        let mut a = arrival(3, "m1@x", 1000, &[]);
+        a.headers = parse_headers(header.as_bytes());
+        let mut deletions = BTreeMap::from([(inbox, BTreeSet::from([7]))]);
+        let (got, _) = s.insert_arrivals(&mut ins, acc, archive, &[a], &mut deletions, &Reception::plain(true)).unwrap();
+        assert_eq!((got.moved, got.inserted), (0, 1), "{header}");
+        assert_eq!(deletions[&inbox].len(), 1, "still to delete");
+    }
 }
 
 #[test]
