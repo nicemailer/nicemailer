@@ -575,7 +575,6 @@ async fn work_loop(w: &Shared) {
     // On the continuous clock (`clock::now`): after a sleep of an hour, a
     // full pass is due.
     let mut last_full: Option<Duration> = None;
-    let mut refused = 0u64;
     // Whether each folder keeps keywords, learnt by the spool's SELECTs.
     let mut keywords: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     // The user's own addresses: their mail is not screened, and they get
@@ -751,14 +750,14 @@ async fn work_loop(w: &Shared) {
                     if !configured_single {
                         bodies.reread();
                     }
-                    let r = bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, &mut refused, deadline).await;
+                    let r = bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, deadline).await;
                     // And the body connection reads its own again.
                     w.control.reload.store(true, Ordering::SeqCst);
                     r
                 };
                 match result {
                     Ok(more) => {
-                        w.status.lock().unwrap().bodies_refused = refused;
+                        w.status.lock().unwrap().bodies_size_differs = w.control.size_differs.load(Ordering::SeqCst);
                         // Bodies left after a whole slice: worth a login of
                         // the body connection, if it waits for that.
                         w.control.backlog.store(more, Ordering::SeqCst);
@@ -1045,7 +1044,6 @@ fn body_session_lost(w: &Shared) {
 async fn body_loop(w: &Shared) {
     let mut bodies = Bodies::new();
     let mut backoff = Backoff(BACKOFF_MIN);
-    let mut refused = 0u64;
     // The connection died with a sleep of the Mac: no new login until the
     // work connection leaves bodies (`Control::backlog`).
     let mut lazy = false;
@@ -1101,13 +1099,13 @@ async fn body_loop(w: &Shared) {
                 // slice it began before this session. The queue is read
                 // again after it (`control.reload`, set by that slice).
                 let _turn = w.body_turn.lock().await;
-                bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, &mut refused, None).await
+                bodies.run(&mut s, w.host.as_ref(), w.spec.account_id, &w.control, None).await
             };
             match result {
                 Ok(_) => {
                     backoff.reset();
                     w.control.backlog.store(false, Ordering::SeqCst);
-                    w.status.lock().unwrap().bodies_refused = refused;
+                    w.status.lock().unwrap().bodies_size_differs = w.control.size_differs.load(Ordering::SeqCst);
                     // None left: wait for new messages, a body asked for,
                     // the time to check the connection is alive, or a
                     // sleep of the Mac, after which it is checked too.

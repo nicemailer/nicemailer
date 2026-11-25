@@ -58,8 +58,8 @@ mod send;
 mod spool;
 pub mod verify;
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -160,9 +160,13 @@ pub(crate) struct Control {
     spool: AtomicBool,
     /// Bodies the user is waiting for (a message opened), first served.
     priority: Mutex<VecDeque<i64>>,
-    /// Bodies refused this run (size other than announced): not tried
-    /// again until the core restarts.
-    refused: Mutex<HashSet<i64>>,
+    /// Bodies stored this run whose size differs from the `RFC822.SIZE`
+    /// the server announced (`bodies.rs`): counted by both connections of
+    /// the account, shown by `sync_status` (`bodies_size_differs`).
+    ///
+    /// Rust note: an atomic, not a `Mutex<u64>`: two threads add to it and
+    /// read it, and a single number needs no lock around it.
+    pub(crate) size_differs: AtomicU64,
     /// The server cuts connections left idle: the body connection is closed
     /// and the work connection fetches the bodies (`pace.rs`).
     pub(crate) one_connection: AtomicBool,

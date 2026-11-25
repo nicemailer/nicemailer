@@ -15,11 +15,18 @@
 //! 2 seconds, after one `RawStore::barrier` per batch, so that a row never
 //! references a file not yet on stable storage.
 //!
-//! A body whose size differs from what the server announced is refused
-//! (`stockage-brut.md`, section 5, step 2) and not tried again until the
-//! core restarts: some servers count `RFC822.SIZE` differently from the
-//! bytes they send, and retrying in a loop would only download it again
-//! and again. The count is in `sync_status` (`bodies_refused`).
+//! A body whose size differs from what the server announced is stored
+//! all the same (`stockage-brut.md`, section 5, step 2). Exchange Online
+//! (Outlook, Microsoft 365) announces an `RFC822.SIZE` other than the
+//! bytes it sends for almost every mail (13,156 bytes sent for 46,376
+//! announced): refusing them left every real mail of such an account
+//! without body. The check caught nothing else: the IMAP framing already
+//! catches a truncated body. A body fetched whole comes as a literal
+//! `{N}` that gives its own length, and a connection cut inside it is an
+//! error, not a short body; a body fetched in pieces ends at the first
+//! short piece, whatever the size announced
+//! (`nm_proto::imap::Session::fetch_body`). The difference is logged and
+//! counted in `sync_status` (`bodies_size_differs`).
 
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
@@ -96,7 +103,6 @@ impl Bodies {
         host: &dyn SyncHost,
         account_id: i64,
         control: &Control,
-        refused: &mut u64,
         deadline: Option<Instant>,
     ) -> Result<bool, PassError> {
         let mut last_progress = Instant::now();
@@ -124,7 +130,7 @@ impl Bodies {
                 }
                 return Ok(false);
             };
-            if control.refused.lock().unwrap().contains(&next.id) || self.pending.iter().any(|d| d.id == next.id) {
+            if self.pending.iter().any(|d| d.id == next.id) {
                 continue;
             }
             if self.selected != Some(next.folder_id) {
@@ -150,16 +156,16 @@ impl Bodies {
                 Ok(None) => continue,
                 Ok(Some(_)) => {}
             }
-            let finished = match w.finish(announced.map(u64::from)) {
-                Ok(f) => f,
-                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                    eprintln!("sync: body of message {} refused: {e}", next.id);
-                    control.refused.lock().unwrap().insert(next.id);
-                    *refused += 1;
-                    continue;
-                }
-                Err(e) => return Err(io(e)),
-            };
+            // The size is compared here, for the log and the count, and
+            // not given to `finish`, which would refuse the body (see the
+            // top of this file).
+            if let Some(n) = announced
+                && u64::from(n) != w.size()
+            {
+                eprintln!("sync: body of message {}: {} bytes received, {n} announced (stored all the same)", next.id, w.size());
+                control.size_differs.fetch_add(1, Ordering::SeqCst);
+            }
+            let finished = w.finish(None).map_err(io)?;
             let parsed = match &finished.plain {
                 Some(plain) => parse(plain),
                 None => ParsedMessage::default(),

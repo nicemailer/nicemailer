@@ -14,7 +14,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use common::{Client, start};
+use common::{Client, start, start_logged};
 use nm_proto::imap::{MailboxName, Security, ServerSpec, Session, StoreOp, Timeouts, UidSet, Uids};
 use serde_json::{Value, json};
 
@@ -739,6 +739,74 @@ fn a_damaged_raw_file_is_fetched_again_and_a_deleted_mail_collected() {
     sync(&mut c);
     let r = c.call("raw_gc", json!({})).unwrap();
     assert_eq!(r["blobs"], 1, "{r}");
+    verify_ok(&mut c);
+}
+
+/// Exchange Online (Outlook, Microsoft 365) announces an `RFC822.SIZE`
+/// other than the bytes it sends, for almost every mail: such a body is
+/// stored all the same, logged and counted (`stockage-brut.md`, section 5,
+/// step 2; `docs/sync.md`, "Bodies"). Dovecot counts right, so the test
+/// gives the database the wrong size instead: the size a body is fetched
+/// with is the one of the row, the `RFC822.SIZE` while it has no body. The
+/// body is then downloaded again (a damaged raw file, repaired), as a new
+/// mail of an Exchange account is.
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn a_body_of_another_size_than_announced_is_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    phone.deliver("INBOX", "a", &[]);
+    std::fs::write(dir.path().join("accounts.toml"), config(FULL, &user, "")).unwrap();
+    let log = dir.path().join("core.log");
+    let _core = start_logged(dir.path(), &[], Some(&log));
+    let mut c = Client::connect(dir.path());
+    c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
+    settled(&mut c, 0);
+    assert_eq!(account(&mut c)["bodies_size_differs"], 0, "Dovecot announces the exact size");
+
+    let (id, _, _) = message_id_of(dir.path(), "a");
+    let (size, hash): (i64, Vec<u8>) =
+        db(dir.path()).query_row("SELECT size, raw_hash FROM message WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    // Three times the bytes, as Exchange announced 46,376 for 13,156. The
+    // core is idle: this write waits for nobody.
+    let w = nm_store::rusqlite::Connection::open(dir.path().join("nicemailer.db")).unwrap();
+    w.busy_timeout(Duration::from_secs(5)).unwrap();
+    w.execute("UPDATE message SET size = ?2 WHERE id = ?1", [id, size * 3]).unwrap();
+    drop(w);
+    let hex: String = hash.iter().map(|x| format!("{x:02x}")).collect();
+    let path = dir.path().join("raw.noindex").join(&hex[..2]).join(format!("{hex}.eml.zst"));
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::write(&path, b"not zstd at all").unwrap();
+    let r = c.call("sync_verify", json!({"account": "dovecot", "repair": true})).unwrap();
+    assert_eq!(r["repaired"], 1, "{r}");
+
+    // Downloaded again, with the wrong size announced: stored, not refused.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let a = account(&mut c);
+        let state: i64 = db(dir.path()).query_row("SELECT body_state FROM message WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        if state == 1 && a["bodies_size_differs"] == 1 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "not stored: body_state {state}, {a}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // The row now has the bytes stored, which are the truth.
+    // The text is in the second file of the database.
+    let d = db(dir.path());
+    d.execute("ATTACH DATABASE ?1 AS body", [dir.path().join("nicemailer_body.db").to_str().unwrap()]).unwrap();
+    let (stored, body): (i64, String) = d
+        .query_row("SELECT m.size, b.text_plain FROM message m JOIN message_body b ON b.message_id = m.id WHERE m.id = ?1", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(stored, size);
+    assert!(!body.is_empty());
+    let text = std::fs::read_to_string(&log).unwrap();
+    let line = format!("sync: body of message {id}: {size} bytes received, {} announced (stored all the same)", size * 3);
+    assert!(text.contains(&line), "{text}");
     verify_ok(&mut c);
 }
 

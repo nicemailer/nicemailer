@@ -83,7 +83,7 @@ A response is kept in memory until decoded, so responses are bounded:
 | Body fetched whole | up to 4 MiB (`WHOLE_BODY_MAX`) | most messages: one command |
 | Pieces of a larger body | 1 MiB (`BODY_CHUNK`), `BODY.PEEK[]<offset.length>` | a 150 MB message never takes more than about 1 MiB |
 
-`fetch_body` uses the size from `RFC822.SIZE` to choose, but stops on the first short piece rather than trusting the size, which some servers count differently. It gives each piece to a callback, the streaming writer of the raw store (`RawWriter::write`, [ingestion.md](ingestion.md)), and returns `None` if the message disappeared meanwhile. The writer can check the total against `RFC822.SIZE` at the end (`RawWriter::finish`); the synchronization refuses a body whose size differs ([sync.md](sync.md), "Bodies").
+`fetch_body` uses the size from `RFC822.SIZE` to choose, but stops on the first short piece rather than trusting the size, which some servers count differently. It gives each piece to a callback, the streaming writer of the raw store (`RawWriter::write`, [ingestion.md](ingestion.md)), and returns `None` if the message disappeared meanwhile. The writer can check the total against `RFC822.SIZE` at the end (`RawWriter::finish`); the synchronization does not, since Exchange Online counts it differently from the bytes it sends, and stores a body whose size differs ([sync.md](sync.md), "Bodies").
 
 ## Failures
 

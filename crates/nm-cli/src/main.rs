@@ -265,8 +265,8 @@ fn print_sync_status(st: &nm_api::SyncStatus) {
             Some(id) => println!("  trusted Authentication-Results: {id}"),
             None => println!("  trusted Authentication-Results: none found yet (every verdict is unknown)"),
         }
-        println!("  bodies left to download: {}{}", a.bodies_missing, if a.bodies_refused > 0 {
-            format!(", {} refused (size other than announced)", a.bodies_refused)
+        println!("  bodies left to download: {}{}", a.bodies_missing, if a.bodies_size_differs > 0 {
+            format!(", {} stored with a size other than announced", a.bodies_size_differs)
         } else {
             String::new()
         });

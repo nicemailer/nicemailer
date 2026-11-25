@@ -153,7 +153,7 @@ The core logs each wake: `the Mac slept, the connection is still alive`, or `…
 
 On the body connection (or the work connection, "Connections" above): first the bodies the user is waiting for (a thread opened by `get_thread` whose mails have no body yet), then the Inbox, the most recent first, then the other folders. Each body is streamed into the raw store and completed in the database in batches ([ingestion.md](ingestion.md)).
 
-A body whose size differs from the `RFC822.SIZE` the server announced is refused (`stockage-brut.md`, section 5, step 2), and not tried again until the core restarts: retrying would download it again and again. `sync status` counts them (`bodies_refused`). A server that counts sizes differently from what it sends would leave such messages without body: none was seen on Dovecot; to be watched on other servers.
+A body whose size differs from the `RFC822.SIZE` the server announced is stored all the same (`stockage-brut.md`, section 5, step 2). Exchange Online (Outlook.com, Microsoft 365) announces a size other than the bytes it sends for almost every mail: on 25 November 2026, 13,156 bytes came for 46,376 announced, and refusing the body, as the core did before, left every real mail of an Outlook account "(body not downloaded)". The check protected from nothing the protocol does not already catch: a body fetched whole is an IMAP literal that states its own length, so a connection cut inside it is an error, never a short body (`ingest_imap.rs`, "a cut in the middle of a body stores nothing"); a body fetched in pieces ends at the first short piece. The core logs each difference (`sync: body of message 401589: 13156 bytes received, 46376 announced (stored all the same)`), and `sync status` counts them since the core started (`bodies_size_differs`): a count, not an error. Dovecot, Gmail and Infomaniak announce the exact size.
 
 ## Failures
 
@@ -184,7 +184,7 @@ Archive                    1 on the server,       1 here,       1 raw files chec
 Same on both sides (0.1 s)
 ```
 
-`sync_status` gives, per account: `state` (`connecting`, `syncing`, `idle`, `waiting`, `auth_failed`, `stopped`), `error`, `mode` (`qresync`, `condstore`, `none`), `last_pass`, `passes` (count since the core started), `next_retry`, `bodies_missing`, `bodies_refused`, and per folder its counters, its last synchronization and whether the server still lists it.
+`sync_status` gives, per account: `state` (`connecting`, `syncing`, `idle`, `waiting`, `auth_failed`, `stopped`), `error`, `mode` (`qresync`, `condstore`, `none`), `last_pass`, `passes` (count since the core started), `next_retry`, `bodies_missing`, `bodies_size_differs`, and per folder its counters, its last synchronization and whether the server still lists it.
 
 ### Progress
 
