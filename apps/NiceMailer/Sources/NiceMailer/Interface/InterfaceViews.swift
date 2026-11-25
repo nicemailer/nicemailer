@@ -199,37 +199,45 @@ private struct WindowContent: View {
                                highlighted: controller.menuIndex,
                                onSelect: { controller.chooseMenuEntry($0) },
                                onHover: { controller.hoverMenu($0, inside: $1) })
-            if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
-                // Each menu drops down from its block of the status bar:
-                // under it when the bar is at the top, above it when the
-                // bar is at the bottom (`ui.md`).
-                //
-                // A block near the right end (Save in the toolbar of
-                // regular) would push the menu out of the window: its right
-                // part cut, and the layer of the overlay widened past the
-                // window, which moved the blocks, which moved the menu again
-                // (a layout loop, and the columns of the list shifted). The
-                // room before the menu is a spacer that gets at most `x - 6`
-                // and never more than what the menu and a margin leave: the
-                // menu is pushed back to the left just enough to stay whole.
-                //
-                // Swift note: `layoutPriority(1)` makes the HStack serve the
-                // spacer first, once the menu (fixed size) has its width;
-                // the last spacer takes what is left.
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0).frame(maxWidth: max(0, x - 6)).layoutPriority(1)
-                    menu
-                    // At least a margin before the window's edge, as a menu
-                    // of macOS keeps.
-                    Spacer(minLength: 8)
+            // The menu never takes more than the window's content height
+            // (`KeyMenu.available`): in a short window its rows scroll
+            // inside it instead of the menu growing past the window, which
+            // pushed the status bar out of sight.
+            GeometryReader { geo in
+                if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
+                    // Each menu drops down from its block of the status bar:
+                    // under it when the bar is at the top, above it when the
+                    // bar is at the bottom (`ui.md`).
+                    //
+                    // A block near the right end (Save in the toolbar of
+                    // regular) would push the menu out of the window: its right
+                    // part cut, and the layer of the overlay widened past the
+                    // window, which moved the blocks, which moved the menu again
+                    // (a layout loop, and the columns of the list shifted). The
+                    // room before the menu is a spacer that gets at most `x - 6`
+                    // and never more than what the menu and a margin leave: the
+                    // menu is pushed back to the left just enough to stay whole.
+                    //
+                    // Swift note: `layoutPriority(1)` makes the HStack serve the
+                    // spacer first, once the menu (fixed size) has its width;
+                    // the last spacer takes what is left.
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0).frame(maxWidth: max(0, x - 6)).layoutPriority(1)
+                        // 4 points less than the window's content: the
+                        // `.padding(.vertical, 2)` below.
+                        menu.capped(at: geo.size.height - 4)
+                        // At least a margin before the window's edge, as a menu
+                        // of macOS keeps.
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: controller.statusPosition == .bottom ? .bottom : .top)
+                } else {
+                    // No block to drop from (status bar hidden, or another
+                    // screen): bottom-right corner, as in Helix.
+                    menu.capped(at: geo.size.height - 24).padding(12)
                 }
-                .padding(.vertical, 2)
-                .frame(maxWidth: .infinity, maxHeight: .infinity,
-                       alignment: controller.statusPosition == .bottom ? .bottom : .top)
-            } else {
-                // No block to drop from (status bar hidden, or another
-                // screen): bottom-right corner, as in Helix.
-                menu.padding(12)
             }
         case .help:
             HelpPanel(groups: Help.groups(controller.keymap, severalAccounts: controller.hasSeveralAccounts))
@@ -2739,6 +2747,17 @@ struct KeyMenu: View {
     /// menu that only informs.
     var onHover: ((Int, Bool) -> Void)? = nil
 
+    /// The height the panel may take, in points: the caller sets it to the
+    /// window's content height (`menusAndPickers`). In a window too short
+    /// for every row, the rows scroll inside the panel, capped at
+    /// `available`, instead of the panel growing past the window, which
+    /// pushed the status bar out of sight. `.infinity` (the panel of a
+    /// question, `ChoicePanel`): no limit.
+    var available: CGFloat = .infinity
+
+    /// The panel's vertical padding, inside its chrome.
+    private var verticalPadding: CGFloat { 10 + Look.popupExtra / 2 }
+
     /// Whether a row's detail is drawn as a badge: a count (not an
     /// information, `detailMuted`) next to a key on the right
     /// (`layout.menu_keys = "right"`: clean, regular). With the key first
@@ -2759,6 +2778,49 @@ struct KeyMenu: View {
     static let keyGapAfterBadge: CGFloat = 8
 
     var body: some View {
+        // The rows as they are when they fit, in a scroll view capped at
+        // `available` when the window is too short for every row: the menu
+        // then scrolls inside the window instead of growing past it, which
+        // pushed the status bar out of sight; the arrows bring the
+        // highlighted row into view.
+        // Swift note: `ViewThatFits` shows the first of its views that fits
+        // in the height offered (capped below); a `ScrollView` is flexible,
+        // it would take all the height offered and leave the rows at its
+        // top. `ScrollViewReader`'s proxy scrolls to a row's `id`;
+        // `.fixedSize(horizontal: true, vertical: false)` keeps the panel
+        // as wide as its widest row, not as wide as the window.
+        ScrollViewReader { proxy in
+            ViewThatFits(in: .vertical) {
+                rows
+                ScrollView {
+                    rows
+                        .onChange(of: highlighted) { _, h in if let h { proxy.scrollTo(h) } }
+                }
+                .scrollIndicators(Look.scrollIndicators)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxHeight: max(available - 2 * verticalPadding, 120 * TextSize.shared.scale))
+        }
+        .padding(.vertical, verticalPadding)
+        .padding(.horizontal, Look.roundedPanels ? 6 : 10)
+        .popupChrome()
+        // Hug the rows vertically, as the plain VStack did: the scroll view
+        // and its reader are flexible, they would fill the height offered
+        // and leave the rows at the top of a panel as tall as the window.
+        .fixedSize(horizontal: true, vertical: true)
+        .uiTarget("menu-panel")
+    }
+
+    /// A copy of the menu whose panel is capped at `height` points
+    /// (`available`).
+    func capped(at height: CGFloat) -> KeyMenu {
+        var copy = self
+        copy.available = height
+        return copy
+    }
+
+    /// The rows of the menu: the title, then one line per entry.
+    @ViewBuilder private var rows: some View {
         // Width of the key column: the longest key, measured in the
         // interface font (in characters, in a font of fixed pitch).
         let measure = TextMeasure.interface(12 * TextSize.shared.scale)
@@ -2848,6 +2910,9 @@ struct KeyMenu: View {
                 .onHover { inside in onHover?(i, inside) }
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
+                // The id `scrollTo` uses to bring the row into view when the
+                // menu scrolls (`body`).
+                .id(i)
                 // A blank line between blocks (folders to deal with, filed,
                 // sent, thrown away; screens).
                 .padding(.top, e.gapBefore ? scaled(10) : 0)
@@ -2856,11 +2921,6 @@ struct KeyMenu: View {
         // As wide as its longest row, not as the window: the rows' spacers
         // (which make the whole row clickable) would stretch it otherwise.
         .fixedSize(horizontal: true, vertical: false)
-        // The highlight of a row runs close to the edges of a rounded
-        // panel, as in a macOS menu; its text keeps its room inside.
-        .padding(.vertical, 10 + Look.popupExtra / 2)
-        .padding(.horizontal, Look.roundedPanels ? 6 : 10)
-        .popupChrome()
     }
 }
 

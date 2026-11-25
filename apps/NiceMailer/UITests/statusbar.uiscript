@@ -138,3 +138,19 @@ click status:help
 expect overlay = help
 click status:empty
 expect overlay = none
+# A window too short for every row of the ; menu (18 rows here): the menu
+# scrolls inside the window and stays whole in it, and the status bar is
+# not pushed out of sight (it used to be, the menu trying to show all its
+# rows at once).
+resize 700x420
+key ;
+expect overlay = menu(NiceMailer.InterfaceController.Prefix.goto)
+expect menu_fits = true
+expect bar_fits = true
+snap folder-menu-short-window
+# The menu still works when it scrolls: its key chooses the last row
+# (History), which was below the window's edge.
+key h
+expect overlay = none
+expect screen = history
+resize 1400x900

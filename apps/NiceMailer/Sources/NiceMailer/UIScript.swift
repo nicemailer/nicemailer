@@ -1152,14 +1152,26 @@ private final class Runner {
                 return abs(x - f.minX) < 1 ? "true" : "false (menu at \(Int(x)), block at \(Int(f.minX)))"
             }(),
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
-            // Whether every row of the open menu is inside the window: a
-            // menu dropping from a block near the right edge must not be
-            // cut there. Empty when no menu is open.
+            // Whether the open menu's panel is whole inside the window, in
+            // both directions: a menu dropping from a block near the right
+            // edge must not be cut on the right, and a menu taller than the
+            // window scrolls inside (`KeyMenu.available`) instead of going
+            // past the bottom edge. Empty when no menu is open.
             "menu_fits": {
-                guard case .menu(let p) = c.overlay, let width = window?.contentView?.bounds.width else { return "" }
-                let rows = (0..<c.menuEntries(p).count).compactMap { UIScript.frames["menu-\($0)"] }
-                guard !rows.isEmpty else { return "" }
-                return rows.allSatisfy { $0.minX >= 0 && $0.maxX <= width + 0.5 } ? "true" : "false"
+                guard case .menu = c.overlay, let b = window?.contentView?.bounds,
+                      let panel = UIScript.frames["menu-panel"] else { return "" }
+                return panel.minX >= -0.5 && panel.maxX <= b.width + 0.5
+                    && panel.minY >= -0.5 && panel.maxY <= b.height + 0.5 ? "true" : "false"
+            }(),
+            // Whether the status bar (or the toolbar) is whole inside the
+            // window while a menu is open: a menu taller than the window
+            // used to push it out of sight, up past the top edge. Empty when
+            // no menu is open.
+            "bar_fits": {
+                guard case .menu = c.overlay, let b = window?.contentView?.bounds else { return "" }
+                let bars = UIScript.frames.filter { $0.key.hasPrefix("status-") }.values
+                guard !bars.isEmpty else { return "" }
+                return bars.allSatisfy { $0.minY >= -0.5 && $0.maxY <= b.height + 0.5 } ? "true" : "false"
             }(),
             // The gap between the unread count of the first row of the
             // open menu and its key on the right, as laid out, in points;
