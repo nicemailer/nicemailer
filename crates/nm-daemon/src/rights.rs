@@ -14,10 +14,11 @@
 //! the tools these methods allow, but a modified proxy, or another program
 //! declaring itself `mcp` in `hello`, gets nothing more.
 //!
-//! The source is still *declared* by the client in `hello`
-//! (`architecture.md`, section 9, "Vérification de la signature"): a
-//! program that says `app` gets the app's rights. That is why sending by
-//! an agent (phase 3 of `mcp.md`) waits for the signature check.
+//! The source comes from the client's code signature, verified at the
+//! connect (`signing.rs`; `architecture.md`, section 9): only a debug
+//! build, which verifies nothing, takes it from what the client declares
+//! in `hello`. That is why sending by an agent (phase 3 of `mcp.md`) is
+//! for release builds only.
 //!
 //! The update of NiceMailer (`prepare_update`, `cancel_update`) is reserved
 //! to the app, which Sparkle updates (`mise-a-jour.md`, section 3).

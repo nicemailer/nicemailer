@@ -5,9 +5,10 @@
 //! and future clients connect to its socket and send requests; the core
 //! answers and pushes events when something changes.
 //!
-//! Development v1: started by hand, without a LaunchAgent and without
-//! checking the clients' code signature (`architecture.md`, sections 6
-//! and 9).
+//! Each client is verified at the connect: its code signature decides who
+//! it is and what it may call, never what it declares in `hello`
+//! (`architecture.md`, section 9; `signing.rs`). A debug build relaxes the
+//! requirement at compile time, so an unsigned `cargo run` works.
 //!
 //! # Concurrency model
 //!
@@ -45,6 +46,7 @@ mod events;
 mod extract;
 mod rights;
 mod setup;
+mod signing;
 mod sync;
 mod update;
 
@@ -288,6 +290,12 @@ async fn main() -> anyhow::Result<()> {
 /// The core itself, once it holds its directory: settings, database,
 /// socket, then the clients until it is asked to stop.
 async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
+    // A release core built without the team id refuses every client
+    // (fail-closed, `signing.rs`); say it once, loudly.
+    #[cfg(not(debug_assertions))]
+    if signing::TEAM_ID.is_empty() {
+        eprintln!("NICEMAILER_TEAM_ID absent à la compilation : toute connexion sera refusée (fail-closed)");
+    }
     let data_dir = data_dir.to_path_buf();
     let db_path = data_dir.join(nm_api::paths::DATABASE);
     // How long each step before the socket takes: until the socket is
@@ -522,6 +530,18 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
+                // Who the client is comes from its code signature, never from
+                // what it will declare in `hello` (`architecture.md`,
+                // section 9; `signing.rs`). A debug build admits unsigned
+                // development binaries and lets `hello` declare the source.
+                let verified = match signing::admit(&stream) {
+                    signing::Admission::Verified(source) => Some(source),
+                    signing::Admission::DevUnverified => None,
+                    signing::Admission::Refused => {
+                        eprintln!("{} connexion refusée : signature du client non reconnue", local_time());
+                        continue;
+                    }
+                };
                 // Beyond MAX_CONNECTIONS, the connection is closed at once:
                 // the stream is dropped, the client sees a closed socket.
                 let Ok(permit) = core.conn_slots.clone().try_acquire_owned() else {
@@ -534,7 +554,7 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
                 tokio::spawn(async move {
                     // The slot is freed when the connection ends.
                     let _permit = permit;
-                    if let Err(e) = serve(core, stream).await {
+                    if let Err(e) = serve(core, stream, verified).await {
                         eprintln!("connexion fermée : {e}");
                     }
                 });
@@ -787,7 +807,10 @@ fn cleanup(socket: &Path) {
 struct Session {
     /// Whether the client completed the `hello` handshake.
     hello: bool,
-    /// Who the client claims to be; recorded in `modified_by` and the audit log.
+    /// Whether the client's identity was verified from its code signature.
+    /// False only in a debug build, where `hello` declares the source.
+    identity_verified: bool,
+    /// Who the client is; recorded in `modified_by` and the audit log.
     source: Source,
     /// Queue of lines to write to this client's socket.
     out: mpsc::Sender<Arc<String>>,
@@ -985,7 +1008,7 @@ enum Read {
 /// So responses may come back in another order than the requests: the
 /// client matches them by `id`, as JSON-RPC allows. A client that needs a
 /// read to see a write waits for the write's response before sending it.
-async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
+async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>) -> anyhow::Result<()> {
     // Split the socket into a reading half and a writing half, so that they
     // can be used by different tasks.
     let (read, mut write) = stream.into_split();
@@ -1022,8 +1045,10 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
         })
     };
 
-    // The source defaults to CLI until `hello` says otherwise.
-    let mut session = Session { hello: false, source: Source::Cli, out: out.clone(), subscribed: false };
+    // The source is the verified signature when there is one, else CLI
+    // until `hello` says otherwise (a debug build verifies nothing).
+    let mut session =
+        Session { hello: false, identity_verified: verified.is_some(), source: verified.unwrap_or(Source::Cli), out: out.clone(), subscribed: false };
     // `BufReader` buffers the reads; each line is read with a limit
     // (`read_line`), so one line cannot make the core's memory grow.
     let mut reader = BufReader::new(read);
@@ -1780,25 +1805,28 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
                     reason::PROTOCOL_VERSION.with("version", p.protocol_version).with("expected", PROTOCOL_VERSION),
                 ));
             }
-            // Provisional: the identity will come from the client's code
-            // signature, never from what the client declares.
-            let source = match p.client.as_deref() {
-                Some("app") => Source::App,
-                Some("tui") => Source::Tui,
-                Some("mcp") => Source::Mcp,
-                Some("web") => Source::Web,
-                _ => Source::Cli,
-            };
+            // The identity comes from the client's code signature, never
+            // from what it declares (`architecture.md`, section 9); only a
+            // debug build, which verifies nothing, takes it from `hello`.
+            if !session.identity_verified {
+                let source = match p.client.as_deref() {
+                    Some("app") => Source::App,
+                    Some("tui") => Source::Tui,
+                    Some("mcp") => Source::Mcp,
+                    Some("web") => Source::Web,
+                    _ => Source::Cli,
+                };
+                session.source = source;
+            }
             // In maintenance, only the app is let in, to prepare or cancel
             // the update (`update.rs`); every other request of it is
             // refused by `call`. The others get the maintenance's error,
             // and the connection closes.
-            if source != Source::App
+            if session.source != Source::App
                 && let Some(e) = update::refusal(&core.maintenance)
             {
                 return Err(e);
             }
-            session.source = source;
             session.hello = true;
             to_value(HelloResult {
                 protocol_version: PROTOCOL_VERSION,
