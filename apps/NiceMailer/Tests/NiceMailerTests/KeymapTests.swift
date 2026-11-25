@@ -215,7 +215,7 @@ struct KeymapTests {
         #expect(groups.last?.title == L("Your menus"))
         #expect(groups.last?.entries == [HelpEntry(key: "x…", label: "mine")])
         // An action without a key is left out.
-        let noFlag = Help.groups(Keymap.defaults.binding("*", to: "none", in: .mail)).flatMap(\.entries)
+        let noFlag = Help.groups(Keymap.defaults.binding("I", to: "none", in: .mail)).flatMap(\.entries)
         #expect(!noFlag.contains { $0.label == L("flag") })
     }
 }

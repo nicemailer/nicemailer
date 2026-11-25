@@ -97,6 +97,12 @@ fn the_values_of_the_specification() {
     assert_eq!(geek["reader.body_format"], Value::Text("text".into()));
     assert_eq!(clean["reader.body_format"], Value::Text("html".into()));
     assert_eq!(regular["reader.body_format"], Value::Text("html".into()));
+    // The title line's controls, same list in every built-in theme.
+    let actions = vec!["folder_name", "show_all", "pixels", "unsubscribed", "reply_all", "reply_sender",
+                       "forward", "unsubscribe", "flag", "text_or_html"]
+        .into_iter().map(String::from).collect::<Vec<_>>();
+    assert_eq!(geek["reader.title_actions"], Value::Names(actions.clone()));
+    assert_eq!(clean["reader.title_actions"], Value::Names(actions));
     match &regular["window.blocks"] {
         Value::Blocks(b) => assert_eq!(b.first().map(String::as_str), Some("account")),
         other => panic!("{other:?}"),
@@ -219,6 +225,17 @@ fn the_blocks_are_known_and_listed_once() {
     refused("mine", "[window]\nblocks = [\"account\", \"account\"]\n", Some(2), "listed twice");
     refused("mine", "[window]\nblocks = [\"->\", \"help\", \"->\"]\n", Some(2), "listed twice");
     refused("mine", "[window]\nblocks = \"account\"\n", Some(2), "expected a list of blocks");
+}
+
+#[test]
+fn the_title_actions_are_known_and_listed_once() {
+    let l = ok("mine", "[reader]\ntitle_actions = [\"flag\", \"text_or_html\"]\n");
+    assert_eq!(l.values["reader.title_actions"], Value::Names(vec!["flag".into(), "text_or_html".into()]));
+    // An empty list hides every control of the title line: the keys still work.
+    assert_eq!(ok("mine", "[reader]\ntitle_actions = []\n").values["reader.title_actions"], Value::Names(vec![]));
+    refused("mine", "[reader]\ntitle_actions = [\"flag\", \"reply\"]\n", Some(2), "unknown name \"reply\"");
+    refused("mine", "[reader]\ntitle_actions = [\"flag\", \"flag\"]\n", Some(2), "listed twice");
+    refused("mine", "[reader]\ntitle_actions = \"flag\"\n", Some(2), "expected a list of names");
 }
 
 #[test]

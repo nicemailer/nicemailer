@@ -20,11 +20,11 @@ key j
 expect selected = 1
 expect selected_snippet !~ Bonjour Alex
 # The flag of the selected row, on the first line, inside its fill.
-key *
+key I
 expect selected_flagged = true
 expect selected_flag_inside > 3
 snap list-layout-stacked-flagged
-key *
+key I
 # The Show menu (v) offers the other one, in its block of the
 # presentation, after the theme; four blocks, set apart by a gap.
 key v

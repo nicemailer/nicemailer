@@ -72,6 +72,9 @@ enum UIScript {
     static var statusBeforeMaintenance: AppModel.Status?
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
+    /// The controls of the reader's title line, in the order shown
+    /// (`reader.title_actions` filtered by what the mail offers).
+    static var readerTitleActions: [String]?
     /// The commands of the reply show their keys alone, the line being too
     /// narrow for their words (`compose_commands_compact`).
     static var composeCommandsCompact = false
@@ -991,6 +994,7 @@ private final class Runner {
             // The reader's title line: subject and controls on 1 line, or
             // the subject above them on 2 (`ReaderTitleBar`).
             "title_lines": "\(UIScript.titleLines)",
+            "reader_actions": (UIScript.readerTitleActions ?? []).joined(separator: ","),
             // AppKit's delay before a tooltip, in ms (`Tooltips`).
             "tooltip_delay": "\(UserDefaults.standard.integer(forKey: Tooltips.delayKey))",
             // How the attachments of a message show (`layout.attachments`).
@@ -1200,22 +1204,13 @@ private final class Runner {
                 return "\(Int((fillRight - flag.maxX).rounded()))"
             }(),
             // The controls of the reader's title line shown, from left to
-            // right as laid out, comma-separated: `folder` (in
-            // "Everything"), `pixels`, `unsubscribe`, `flag`, `format` (the
-            // text | html | images switch). The information comes first,
-            // then the buttons (`ui.md`, "Boutons de l'en-tête").
-            "title_controls_order": {
-                guard m.composer == nil else { return "" }
-                var shown: [(String, String)] = []
-                if m.selectedThreadFolderLabel != nil { shown.append(("folder", "reader-folder")) }
-                if m.trackingPixels > 0 { shown.append(("pixels", "reader-pixels")) }
-                if let o = m.unsubscribeOffer, o.senderUnsubscribedAt == nil { shown.append(("unsubscribe", "reader-unsubscribe")) }
-                if m.threads.contains(where: { $0.id == m.openThread?.id }) { shown.append(("flag", "reader-flag")) }
-                if m.latestReceived?.bodyHtml != nil { shown.append(("format", "format-text")) }
-                // A frame not laid out yet leaves its control out.
-                return shown.compactMap { name, id in UIScript.frames[id].map { (name, $0.minX) } }
-                    .sorted { $0.1 < $1.1 }.map(\.0).joined(separator: ",")
-            }(),
+            // right as laid out, comma-separated, in the order the theme
+            // lists them (`reader.title_actions`, `ui.md`, "Boutons de
+            // l'en-tête"): `folder` (in "Everything"), `pixels`,
+            // `unsubscribed`, `reply_all`, `reply_sender`, `forward`,
+            // `unsubscribe`, `flag`, `format` (the text | html | images
+            // switch).
+            "title_controls_order": titleControlsOrder(),
             // Heights of the buttons of the title line, as laid out, in
             // points, comma-separated (`FramedButton`, `FramedSegments`):
             // in the reader unsubscribe, the flag and the text | html
@@ -1223,7 +1218,8 @@ private final class Runner {
             // design for reading and writing: the same height.
             "title_button_heights": {
                 let ids = m.composer == nil
-                    ? ["reader-unsubscribe", "reader-flag", "format-text"]
+                    ? ["reader-reply-all", "reader-reply-sender", "reader-forward",
+                       "reader-unsubscribe", "reader-flag", "format-text"]
                     : ["compose-command-send"]
                 return ids.compactMap { UIScript.frames[$0] }.map { "\(Int($0.height.rounded()))" }.joined(separator: ",")
             }(),
@@ -1392,6 +1388,32 @@ private final class Runner {
         ]
         return main.merging(preferencesState()) { $1 }
     }
+
+    /// `title_controls_order`: the controls of the title line shown, from
+    /// left to right as laid out, comma-separated, in the order the theme
+    /// lists them (`reader.title_actions`, `ui.md`, "Boutons de l'en-tête").
+    /// Only the controls of the current list (`reader_actions`) are read,
+    /// sorted by where they are laid out: a frame left behind by a control
+    /// that went away would sort wrong.
+    private func titleControlsOrder() -> String {
+        guard model.composer == nil else { return "" }
+        let laidOut = (UIScript.readerTitleActions ?? []).compactMap { action -> (String, CGFloat)? in
+            guard let id = Self.titleControlFrame[action], let f = UIScript.frames[id] else { return nil }
+            return (Self.titleControlName[action] ?? action, f.minX)
+        }
+        return laidOut.sorted { $0.1 < $1.1 }.map { $0.0 }.joined(separator: ",")
+    }
+
+    /// The frame of each control of the title line, by its name in
+    /// `reader.title_actions` (`title_controls_order`).
+    private static let titleControlFrame = ["folder_name": "reader-folder", "show_all": "reader-show-all",
+        "pixels": "reader-pixels", "unsubscribed": "reader-unsubscribed", "reply_all": "reader-reply-all",
+        "reply_sender": "reader-reply-sender", "forward": "reader-forward", "unsubscribe": "reader-unsubscribe",
+        "flag": "reader-flag", "text_or_html": "format-text"]
+    /// Its short name in `title_controls_order`.
+    private static let titleControlName = ["folder_name": "folder", "show_all": "show_all", "pixels": "pixels",
+        "unsubscribed": "unsubscribed", "reply_all": "reply_all", "reply_sender": "reply_sender",
+        "forward": "forward", "unsubscribe": "unsubscribe", "flag": "flag", "text_or_html": "format"]
 
     /// The Preferences' fields (`UITests/README.md`): empty while closed.
     func preferencesState() -> [String: String] {

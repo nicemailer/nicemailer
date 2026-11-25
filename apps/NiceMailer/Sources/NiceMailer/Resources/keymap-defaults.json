@@ -456,6 +456,10 @@
         "key": "S"
       },
       {
+        "action": "view.toggle_html",
+        "key": "h"
+      },
+      {
         "action": "picker.links",
         "key": "l"
       },
@@ -493,7 +497,7 @@
       },
       {
         "action": "mail.toggle_flag",
-        "key": "*"
+        "key": "I"
       },
       {
         "action": "picker.tag",

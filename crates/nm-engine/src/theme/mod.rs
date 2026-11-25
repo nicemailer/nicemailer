@@ -112,6 +112,8 @@ pub enum Value {
     Float(f64),
     Color(Color),
     Blocks(Vec<String>),
+    /// A list of names (`reader.title_actions`).
+    Names(Vec<String>),
 }
 
 /// The values of a theme, by dotted key (`colors.background`).
@@ -263,7 +265,27 @@ fn read_value(key: &Key, item: &Item) -> Result<Value, String> {
             Ok(Value::Text(v.into()))
         }
         Kind::Blocks => read_blocks(item).map(Value::Blocks),
+        Kind::Names(known) => read_names(item, known).map(Value::Names),
     }
+}
+
+/// A list of known names, in order, each at most once (section 6.6):
+/// the controls of the reader's title line.
+fn read_names(item: &Item, known: &[&str]) -> Result<Vec<String>, String> {
+    let array = item.as_array().ok_or("expected a list of names: [\"reply_all\", \u{2026}]")?;
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for v in array.iter() {
+        let n = v.as_str().ok_or("expected a list of names")?;
+        if !known.contains(&n) {
+            return Err(format!("unknown name {n:?}; they are {}", known.join(", ")));
+        }
+        if !seen.insert(n) {
+            return Err(format!("the name {n:?} is listed twice"));
+        }
+        out.push(n.to_string());
+    }
+    Ok(out)
 }
 
 /// A color: `"#RRGGBB"`, `"#RRGGBBAA"`, `"system.<name>"`, or a table
@@ -576,6 +598,10 @@ pub fn view(resolved: &Resolved, dir: &Path, error: Option<&Problem>, warnings: 
         reader: nm_api::ThemeReader {
             body_format: text(v, "reader.body_format"),
             html_min_font_size: int(v, "reader.html_min_font_size") as u32,
+            title_actions: match v.get("reader.title_actions") {
+                Some(Value::Names(n)) => n.clone(),
+                other => panic!("theme key reader.title_actions: expected names, found {other:?}"),
+            },
         },
         error: error.map(crate::problem_view),
         warnings: warnings.iter().map(crate::problem_view).collect(),
@@ -617,6 +643,7 @@ fn toml_value(value: &Value) -> String {
         Value::Color(Color::Pair { light, dark }) if light == dark => quoted(light),
         Value::Color(Color::Pair { light, dark }) => format!("{{ light = {}, dark = {} }}", quoted(light), quoted(dark)),
         Value::Blocks(b) => format!("[{}]", b.iter().map(|s| quoted(s)).collect::<Vec<_>>().join(", ")),
+        Value::Names(n) => format!("[{}]", n.iter().map(|s| quoted(s)).collect::<Vec<_>>().join(", ")),
     }
 }
 

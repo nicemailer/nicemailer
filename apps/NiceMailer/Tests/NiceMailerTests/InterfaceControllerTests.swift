@@ -278,7 +278,7 @@ struct InterfaceControllerTests {
         #expect(read)
         #expect(await eventually { core.calls("set_thread_seen").count == 1 })
         #expect(Set(core.calls("set_thread_seen")[0]["thread_ids"] as? [Int] ?? []).isSubset(of: ids))
-        press("*")
+        press("I")
         let flagged = model.threads.filter { ids.contains($0.id) }.allSatisfy { $0.isFlagged }
         #expect(flagged)
         #expect(await eventually { core.calls("set_thread_flagged").count == 1 })
@@ -316,7 +316,7 @@ struct InterfaceControllerTests {
     }
 
     @Test func readAndFlagToggles() async {
-        press("*")
+        press("I")
         #expect(await eventually { core.calls("set_thread_flagged").first?["flagged"] as? Bool == true })
         // Shown at once, before the core answers.
         #expect(model.selectedThread?.isFlagged == true)

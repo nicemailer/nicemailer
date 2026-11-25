@@ -136,7 +136,19 @@
     },
     "reader": {
       "body_format": "html",
-      "html_min_font_size": 11
+      "html_min_font_size": 11,
+      "title_actions": [
+        "folder_name",
+        "show_all",
+        "pixels",
+        "unsubscribed",
+        "reply_all",
+        "reply_sender",
+        "forward",
+        "unsubscribe",
+        "flag",
+        "text_or_html"
+      ]
     },
     "error": null,
     "warnings": []
@@ -278,7 +290,19 @@
     },
     "reader": {
       "body_format": "text",
-      "html_min_font_size": 11
+      "html_min_font_size": 11,
+      "title_actions": [
+        "folder_name",
+        "show_all",
+        "pixels",
+        "unsubscribed",
+        "reply_all",
+        "reply_sender",
+        "forward",
+        "unsubscribe",
+        "flag",
+        "text_or_html"
+      ]
     },
     "error": null,
     "warnings": []
@@ -420,7 +444,19 @@
     },
     "reader": {
       "body_format": "text",
-      "html_min_font_size": 11
+      "html_min_font_size": 11,
+      "title_actions": [
+        "folder_name",
+        "show_all",
+        "pixels",
+        "unsubscribed",
+        "reply_all",
+        "reply_sender",
+        "forward",
+        "unsubscribe",
+        "flag",
+        "text_or_html"
+      ]
     },
     "error": null,
     "warnings": []
@@ -547,7 +583,19 @@
     },
     "reader": {
       "body_format": "html",
-      "html_min_font_size": 11
+      "html_min_font_size": 11,
+      "title_actions": [
+        "folder_name",
+        "show_all",
+        "pixels",
+        "unsubscribed",
+        "reply_all",
+        "reply_sender",
+        "forward",
+        "unsubscribe",
+        "flag",
+        "text_or_html"
+      ]
     },
     "error": null,
     "warnings": []

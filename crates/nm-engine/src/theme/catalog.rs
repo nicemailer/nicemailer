@@ -28,6 +28,9 @@ pub enum Kind {
     Font,
     /// The blocks of the status bar or the toolbar, in order (section 6.1).
     Blocks,
+    /// A list of these names, in order, each at most once
+    /// (`reader.title_actions`, section 6.6).
+    Names(&'static [&'static str]),
 }
 
 /// One key of a theme.
@@ -53,6 +56,23 @@ pub const TABLES: &[&str] = &["window", "fonts", "layout", "motion", "colors", "
 
 /// Blocks of the status bar or the toolbar (section 6.1).
 pub const BLOCKS: &[&str] = &["account", "folder", "attributes", "view", "move", "save", "ai", "help"];
+
+/// The controls of the reader's title line, in the order they are shown
+/// (section 6.6): first what the line says (`folder_name`, `show_all`,
+/// `pixels`, `unsubscribed`), then what can be done (`reply_all`,
+/// `reply_sender`, `forward`, `unsubscribe`, `flag`, `text_or_html`).
+pub const READER_ACTIONS: &[&str] = &[
+    "folder_name",
+    "show_all",
+    "pixels",
+    "unsubscribed",
+    "reply_all",
+    "reply_sender",
+    "forward",
+    "unsubscribe",
+    "flag",
+    "text_or_html",
+];
 /// A wide gap between two groups of blocks.
 pub const BLOCK_GAP: &str = "|";
 /// All the room left: what follows goes to the right edge.
@@ -175,6 +195,8 @@ pub const KEYS: &[Key] = &[
     // the text size (⌘+ ⌘−) as the whole page is (section 6.6).
     k("reader", "html_min_font_size", Kind::IntOrZero(6, 24),
       "smallest text of a mail in HTML, in points for a 12 pt text, grown with the text size; smaller text is drawn at this size; 0: no minimum"),
+    k("reader", "title_actions", Kind::Names(READER_ACTIONS),
+      "controls of the title line of the reader, in order: folder_name, show_all, pixels, unsubscribed, reply_all, reply_sender, forward, unsubscribe, flag, text_or_html; one left out is hidden, its key still works; one without an object for the mail shown (unsubscribe without an offer, text_or_html without HTML) is hidden too"),
 ];
 
 /// The key `name` of `table`.

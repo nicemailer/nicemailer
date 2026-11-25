@@ -25,9 +25,9 @@ key d
 expect flash ~ 3
 expect marked_count = 0
 # Flag toggles.
-key *
+key I
 expect selected_flagged = true
-key *
+key I
 expect selected_flagged = false
 # U marks read whatever the state; u toggles.
 key U
@@ -52,10 +52,10 @@ key u
 expect marked_unread > 2
 key U
 expect marked_unread = 0
-key *
+key I
 expect marked_flagged > 2
 snap all-flagged
-key *
+key I
 expect marked_flagged = 0
 key esc
 expect marked_count = 0

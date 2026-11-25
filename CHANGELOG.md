@@ -14,6 +14,8 @@ How to write it:
 
 ### Added
 
+- **Keyboard:** `h` switches the open mail between text and HTML (`v` `h` still works); the switch's tooltips now say `h`.
+- **Reader:** Three action buttons on the title line of the open mail — reply to all (`r`), reply to the sender only (`R`), forward (`F`) — drawn as their symbol, the key in the tooltip; the flag button no longer says "flag". Which controls the line shows, and in which order, is set by the theme: `reader.title_actions` in `themes/`, e.g. `[reader] title_actions = ["reply_all", "forward", "flag", "text_or_html"]` (docs/themes.md).
 - **Accounts:** Sign in to a Microsoft 365 or Outlook.com account with OAuth2, in the browser: no password is asked, and NiceMailer never sees one. In the Preferences, the password field becomes a "Sign in with Microsoft" button; in the CLI, `nicemailer account add` opens the sign-in page itself (`--no-browser` to print it only), and `nicemailer account login <key>` signs an existing account in again. The refresh token is kept in the Keychain in place of a password, and renewed by the core. The Microsoft application id is embedded in the app at build time, so adding such an account works at the first launch, with nothing to configure.
 - **Themes:** Choose the look of the app in the Preferences (Settings…, Appearance): geek (the default), clean, sober and airy, in SF Pro, regular, a Mac window with a toolbar, as in Mail, or a theme of your own. Each is a file of `~/.config/nicemailer/themes/` you can modify, and `nicemailer theme new` starts one of yours (docs/themes.md).
 - **Themes:** A fourth built-in theme, minimal: clean in iA Writer Mono V, with a smaller status bar that reminds the keys, a wider column of text, no animation, and mails shown as text. Choose it in the Preferences (Appearance) or with `v` `t`.
@@ -32,6 +34,7 @@ How to write it:
 
 ### Changed
 
+- **Keyboard:** The flag key is `I` instead of `*`. On the title line of the open mail, the flag button now shows only its symbol and the unsubscribe button no longer shows its key ⌘U: no key, no word on the action buttons (the tooltip still says both).
 - **Reading:** The buttons of the mail's title line (unsubscribe, text | html | images) look like the commands of a reply: framed, the same height, their key in the accent colour, filled under the pointer. What the line says (the folder in Everything, the blocked pixels) now comes before the buttons, which no longer move with the length of a folder's name.
 - **AI:** Translation follows what you are doing: a mail read is translated into your language at once; a reply you wrote in your language, into the language of the mail received; a new mail, into a language chosen among the 19 of the app, in a second list ("Translate…"). Prompts with choices (Rewrite…, Translate…) are one row of the palette; typing still finds each choice.
 - **Menus:** The Display menu (`v`) is now named Show, and the Attributes block and selector Filter: verbs, as Move and Save, in every language. Its rows are in four blocks set apart by a gap: the mail shown (text / HTML, remote images), the columns, the presentation (theme, list, status bar), the sort.

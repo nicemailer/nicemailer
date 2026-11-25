@@ -14,11 +14,11 @@ appearance light
 expect title_inset ~ 12,
 # A flag on the selected row: inside its fill of the accent, not over its
 # right edge (layout.row_inset = 8).
-key *
+key I
 expect selected_flagged = true
 expect selected_flag_inside > 3
 snap regular-list-flagged
-key *
+key I
 expect selected_flagged = false
 snap regular-list
 # The keys work as in every theme.
@@ -77,7 +77,7 @@ key e
 expect folder ~ Everything
 # The folder of the mail opens the title line, before the buttons: they
 # stay where they are whatever the folder's name.
-expect title_controls_order ~ folder,flag
+expect title_controls_order ~ folder,reply_all,reply_sender,forward,flag
 expect row_width = 372
 expect row_folder_with_account = false
 click status:s

@@ -1665,14 +1665,19 @@ private struct ReaderColumn: View {
             // The address book's icons are part of the blocks: the text is
             // rebuilt when the cards arrive (`TextReader.refresh`).
             let blocks = ThreadDisplay.blocks(thread, state, book: model.senderBook)
+            // The controls of the title line, in the order the theme lists
+            // them (`reader.title_actions`).
+            let actions = ReaderTitleAction.shown(configured: ThemeStore.active.reader.titleActions, titleContext(state))
             VStack(spacing: 0) {
                 // The subject, then the controls of the mail; on two lines
                 // when the subject would not fit whole beside them
                 // (`ReaderTitleBar`).
                 ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups,
                                maxWidth: Look.readerMaxWidth, scrollerWidth: controller.readerScrollerWidth) {
-                    titleControls(state)
+                    titleControls(actions, state)
                 }
+                .onAppear { UIScript.readerTitleActions = actions.map(\.rawValue) }
+                .onChange(of: actions) { _, new in UIScript.readerTitleActions = new.map(\.rawValue) }
                 Look.separator.frame(height: 1)
                 Group {
                     if model.bodyFormat != "text" {
@@ -1700,92 +1705,142 @@ private struct ReaderColumn: View {
         }
     }
 
-    /// The controls of the title line, left to right (`ui.md`, "Boutons de
-    /// l'en-tête"): first what the line says, then what can be done.
-    ///
-    /// - The information: the folder of the mail (in "Everything"), `T`,
-    ///   the blocked pixels, "unsubscribed on …".
-    /// - The buttons: unsubscribe, the flag, the text | html | images
-    ///   switch.
+    /// What the mail shown offers to the title line
+    /// (`ReaderTitleAction.Context`).
+    private func titleContext(_ state: ThreadDisplay.State) -> ReaderTitleAction.Context {
+        let offer = model.unsubscribeOffer
+        return ReaderTitleAction.Context(
+            folderLabel: model.selectedThreadFolderLabel,
+            showAll: state.showAll,
+            trackingPixels: model.trackingPixels,
+            unsubscribedAt: offer?.senderUnsubscribedAt,
+            unsubscribeOffered: offer != nil && offer?.senderUnsubscribedAt == nil,
+            flagged: model.threads.first(where: { $0.id == model.openThread?.id })?.isFlagged,
+            hasHtml: model.latestReceived?.bodyHtml != nil,
+            quarantine: model.currentRole == "quarantine")
+    }
+
+    /// The controls of the title line, in the order the theme lists them
+    /// (`reader.title_actions`, `ui.md`, "Boutons de l'en-tête"): first what
+    /// the line says, then what can be done. A control without an object for
+    /// the mail shown is left out (`ReaderTitleAction.shown`).
     ///
     /// The controls are aligned on the right: with the information first,
     /// the buttons stay at the same place from one mail to the next,
-    /// whatever the length of a folder's name or the number of pixels, and
-    /// the switch always ends the line.
+    /// whatever the length of a folder's name or the number of pixels.
     @ViewBuilder
-    private func titleControls(_ state: ThreadDisplay.State) -> some View {
-        // In "Everything", the folder of the mail (and its account in
-        // "all"): the list mixes every folder.
-        if let label = model.selectedThreadFolderLabel {
-            Text(label).foregroundStyle(Palette.muted).lineLimit(1)
-                .uiTarget("reader-folder")
-        }
-        if state.showAll {
-            Text("T").foregroundStyle(Palette.accentText)
-        }
-        // Tracking pixels the core removed (`ui.md`, "Images distantes"):
-        // shown in every display, they are never loaded. An eye struck out
-        // and the number, shorter than a sentence on a line that holds the
-        // subject; the tooltip and VoiceOver say what it is.
-        if model.trackingPixels > 0 {
-            HStack(spacing: scaled(3)) {
-                Image(systemName: "eye.slash")
-                Text("\(model.trackingPixels)")
-            }
-            .foregroundStyle(Palette.muted)
-            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
-            .uiTarget("reader-pixels")
-        }
-        // Unsubscribe (`ui.md`, "Désabonnement"): once done, what it says
-        // ("unsubscribed on …") is information, with the rest of it; until
-        // then, a framed button as the commands of a reply (`FramedButton`):
-        // its key in the accent color, then its word.
-        if let offer = model.unsubscribeOffer, let at = offer.senderUnsubscribedAt {
-            Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
-        }
-        if let offer = model.unsubscribeOffer, offer.senderUnsubscribedAt == nil {
-            let key = controller.keyLabel(.mailUnsubscribe)
-            let label = UnsubscribeDisplay.label(offer, key: key)
-            FramedButton(help: label.help, accessibility: label.text, action: { model.unsubscribe() }) {
+    private func titleControls(_ actions: [ReaderTitleAction], _ state: ThreadDisplay.State) -> some View {
+        ForEach(actions) { action in
+            switch action {
+            case .folderName:
+                // In "Everything", the folder of the mail (and its account
+                // in "all"): the list mixes every folder.
+                if let label = model.selectedThreadFolderLabel {
+                    Text(label).foregroundStyle(Palette.muted).lineLimit(1)
+                        .uiTarget("reader-folder")
+                }
+            case .showAll:
+                Text("T").foregroundStyle(Palette.accentText)
+                    .uiTarget("reader-show-all")
+            case .pixels:
+                // Tracking pixels the core removed (`ui.md`, "Images
+                // distantes"): shown in every display, they are never
+                // loaded. An eye struck out and the number, shorter than a
+                // sentence on a line that holds the subject; the tooltip and
+                // VoiceOver say what it is.
                 HStack(spacing: scaled(3)) {
-                    Text(key).foregroundStyle(Palette.accentText)
-                    Text(label.text).foregroundStyle(Palette.muted)
-                    // A link found in the text, not the sender's header:
-                    // the browser opens.
-                    if let symbol = label.symbol { Image(systemName: symbol).foregroundStyle(Palette.muted) }
+                    Image(systemName: "eye.slash")
+                    Text("\(model.trackingPixels)")
+                }
+                .foregroundStyle(Palette.muted)
+                .help(L("Tracking pixels removed from this conversation: they are never loaded"))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
+                .uiTarget("reader-pixels")
+            case .unsubscribed:
+                // Unsubscribe done (`ui.md`, "Désabonnement"): what it says
+                // ("unsubscribed on …") is information, with the rest of it.
+                if let offer = model.unsubscribeOffer, let at = offer.senderUnsubscribedAt {
+                    Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
+                        .uiTarget("reader-unsubscribed")
+                }
+            case .replyAll:
+                titleIconButton(symbol: "arrowshape.turn.up.left.2",
+                                help: L("Reply to all (%@)", controller.keyLabel(.composeReplyAll)),
+                                accessibility: L("reply to all"),
+                                target: "reader-reply-all") { controller.startReply() }
+            case .replySender:
+                titleIconButton(symbol: "arrowshape.turn.up.left",
+                                help: L("Reply to the sender only (%@)", controller.keyLabel(.composeReplySender)),
+                                accessibility: L("reply to the sender only"),
+                                target: "reader-reply-sender") { controller.startReply(kind: .replySender) }
+            case .forward:
+                titleIconButton(symbol: "arrowshape.turn.up.right",
+                                help: L("Forward (%@)", controller.keyLabel(.composeForward)),
+                                accessibility: L("forward"),
+                                target: "reader-forward") { controller.startReply(kind: .forward) }
+            case .unsubscribe:
+                // Unsubscribe (`ui.md`, "Désabonnement"): a framed button as
+                // the commands of a reply (`FramedButton`): its key in the
+                // accent color, then its word.
+                if let offer = model.unsubscribeOffer, offer.senderUnsubscribedAt == nil {
+                    let key = controller.keyLabel(.mailUnsubscribe)
+                    let label = UnsubscribeDisplay.label(offer, key: key)
+                    FramedButton(help: label.help, accessibility: label.text, action: { model.unsubscribe() }) {
+                        HStack(spacing: scaled(3)) {
+                            // No key on the button: it stays in the tooltip.
+                            Text(label.text).foregroundStyle(Palette.muted)
+                            // A link found in the text, not the sender's header:
+                            // the browser opens.
+                            if let symbol = label.symbol { Image(systemName: symbol).foregroundStyle(Palette.muted) }
+                        }
+                    }
+                    .uiTarget("reader-unsubscribe")
+                }
+            case .flag:
+                // The flag of the mail shown, on or off (`ui.md`, "Boutons de
+                // l'en-tête"): filled and orange while flagged; a click flags
+                // or unflags this mail alone, whatever rows are marked.
+                if let thread = model.threads.first(where: { $0.id == model.openThread?.id }) {
+                    let key = controller.keyLabel(.mailToggleFlag)
+                    let flagged = thread.isFlagged
+                    FramedButton(help: flagged ? L("Remove the flag of this mail (%@)", key) : L("Flag this mail (%@)", key),
+                                 accessibility: L("flag"),
+                                 selected: flagged, action: { model.toggleFlag(of: thread.id) }) {
+                        // The symbol alone, in the height of a line of text:
+                        // no key and no word on the button, they are in the
+                        // tooltip; the filled flag says it is on, as a toggle
+                        // of macOS does.
+                        Image(systemName: flagged ? "flag.fill" : "flag")
+                            .frame(height: scaled(15))
+                            .foregroundStyle(Look.ink(flagged ? Palette.flag : Palette.muted, selected: flagged))
+                    }
+                    .uiTarget("reader-flag")
+                }
+            case .textOrHtml:
+                if model.latestReceived?.bodyHtml != nil {
+                    // The text | html | images switch (`ui.md`); also `vh`
+                    // and `vi`. Each word is clicked on its own; "images"
+                    // only when the thread has remote images. One frame, as
+                    // a segmented control (`FramedSegments`), the height of
+                    // the buttons.
+                    FramedSegments(segments: formatSegments, current: model.bodyFormat) { model.setBodyFormat($0) }
                 }
             }
-            .uiTarget("reader-unsubscribe")
         }
-        // The flag of the mail shown, on or off (`ui.md`, "Boutons de
-        // l'en-tête"): filled and orange while flagged; a click flags or
-        // unflags this mail alone, whatever rows are marked.
-        if let thread = model.threads.first(where: { $0.id == model.openThread?.id }) {
-            let key = controller.keyLabel(.mailToggleFlag)
-            let flagged = thread.isFlagged
-            FramedButton(help: flagged ? L("Remove the flag of this mail (%@)", key) : L("Flag this mail (%@)", key),
-                         accessibility: L("flag"),
-                         selected: flagged, action: { model.toggleFlag(of: thread.id) }) {
-                HStack(spacing: scaled(3)) {
-                    Text(key).foregroundStyle(Look.ink(Palette.accentText, selected: flagged))
-                    Image(systemName: flagged ? "flag.fill" : "flag")
-                        .foregroundStyle(Look.ink(flagged ? Palette.flag : Palette.muted, selected: flagged))
-                    // One word in both states, as a toggle of macOS: the
-                    // fill and the filled flag say it is on.
-                    Text(L("flag")).foregroundStyle(Look.ink(Palette.muted, selected: flagged))
-                }
-            }
-            .uiTarget("reader-flag")
+    }
+
+    /// An action of the title line drawn as its symbol alone: the key is in
+    /// the tooltip, not on the button (`reader.title_actions`).
+    private func titleIconButton(symbol: String, help: String, accessibility: String,
+                                 target: String, action: @escaping () -> Void) -> some View {
+        FramedButton(help: help, accessibility: accessibility, action: action) {
+            // The symbol in the height of a line of text, so the button is
+            // as high as the others of the line (title_button_heights):
+            // 15 pt of content for a 12 pt text, plus the padding.
+            Image(systemName: symbol).frame(height: scaled(15)).foregroundStyle(Palette.muted)
         }
-        if model.latestReceived?.bodyHtml != nil {
-            // The text | html | images switch (`ui.md`); also `vh` and
-            // `vi`. Each word is clicked on its own; "images" only when
-            // the thread has remote images. One frame, as a segmented
-            // control (`FramedSegments`), the height of the buttons.
-            FramedSegments(segments: formatSegments, current: model.bodyFormat) { model.setBodyFormat($0) }
-        }
+        .uiTarget(target)
     }
 
     /// The words of the text | html | images switch, with their tooltips;

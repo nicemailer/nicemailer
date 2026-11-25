@@ -143,6 +143,7 @@ Ce tableau est l'inventaire des touches d'aujourd'hui. Il devient les valeurs pa
 | `shift-space` `ctrl-b` | `reader.page_up` | page précédente du mail |
 | `T` | `reader.toggle_all` | citations, signatures, mails repliés |
 | `S` | `reader.skip_quoted` | aller au texte après la citation suivante |
+| `h` | `view.toggle_html` | texte / HTML du mail affiché (aussi `v` `h`) |
 | `l` | `picker.links` | liens du mail |
 | `ctrl-c` | `sender.card_or_copy` | fiche Contacts, ou adresse copiée |
 | `ctrl-shift-c` | `sender.mails` | mails de l'expéditeur |
@@ -151,7 +152,7 @@ Ce tableau est l'inventaire des touches d'aujourd'hui. Il devient les valeurs pa
 | `backspace` `del` | `mail.delete` | supprimer |
 | `u` | `mail.toggle_seen` | lu / non lu |
 | `U` | `mail.mark_seen` | marquer lu |
-| `*` | `mail.toggle_flag` | drapeau |
+| `I` | `mail.toggle_flag` | drapeau |
 | `t` | `picker.tag` | ajouter / retirer un tag |
 | `g` | `picker.group` | ajouter / retirer un groupe |
 | `s` | `menu.save` | menu d'enregistrement |

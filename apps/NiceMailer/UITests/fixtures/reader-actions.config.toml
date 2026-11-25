@@ -1,0 +1,4 @@
+# Settings of reader-actions.uiscript: the theme "actions" of the fixtures
+# keeps only two controls on the reader's title line (reader.title_actions).
+[ui]
+theme = "actions"
