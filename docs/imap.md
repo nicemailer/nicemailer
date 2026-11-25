@@ -104,7 +104,9 @@ On the wire, names are in modified UTF-7 (RFC 3501, 5.1.3): `Envoyés` is `Envoy
 
 ## `nicemailer imap probe <key>`
 
-Connects to the server of an account through the core (method `probe_account`), which alone can read the password, and shows what the server offers:
+Connects to the server of an account through the core (method `probe_account`), which alone can read the password, and shows what the server offers. An OAuth2 account (Outlook.com, Microsoft 365) logs in with an access token, as its synchronization does: the one the core holds, else one renewed from the refresh token of the Keychain, and a new one once if the server refuses it. Only a refresh token the provider refuses asks to sign in again (`nicemailer account login <key>`).
+
+What it shows:
 
 ```text
 $ nicemailer imap probe dovecot

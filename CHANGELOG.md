@@ -54,6 +54,7 @@ How to write it:
 - **Geek:** Dates, counts and the other secondary texts are a little darker in light and lighter in dark, to be read without effort (contrast WCAG AA).
 - **Accounts:** A password saved by one NiceMailer build is now readable by the others. Until now, after installing a release over a development build, or the reverse, the accounts stopped syncing with "the Keychain refused the password of this account". Passwords saved before this version must be saved once more.
 - **Screening:** A mail you send from one of your accounts to another stays in the Inbox, even if that address was banned: the addresses of all your accounts (with their identities, and your archive accounts) are yours, not only those of the account that receives.
+- **CLI:** `nicemailer imap probe` works for an Outlook.com or Microsoft 365 account, instead of saying the account must be signed in again.
 - **Sync:** Mail of an Outlook.com or Microsoft 365 account now gets its body, instead of staying "(body not downloaded)": the server announces a size other than the mail it sends, and NiceMailer refused it.
 
 ### Removed
