@@ -43,6 +43,7 @@ How to write it:
 
 ### Fixed
 
+- **Security:** A client of the core's socket that floods it is now bounded: one overlong line is refused, a connection beyond the 64 open at once is closed at once, a connection that never says `hello` is closed after 10 s, and requests beyond 20 per second on one connection are refused with a `rate_limited` error instead of weighing on the core.
 - **Keyboard:** The main window could ignore every shortcut (`j`, `k`, `c`…) from launch, while the ⌘ shortcuts still worked.
 - **Reading:** A mail without text (an empty body, a signature alone) says "no text" instead of "only quotes earlier messages".
 - **Status bar:** A menu opened from a block near the right edge of the window stays whole, a little to the left of its block, instead of being cut and shifting the columns of the list.

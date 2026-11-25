@@ -87,3 +87,33 @@ fn a_hello_within_the_timeout_keeps_the_connection_open() {
     let mut c = Client::connect(dir.path());
     assert_eq!(c.call("ping", json!({})).unwrap(), json!("pong"));
 }
+
+/// The requests of one connection beyond its rate are refused with
+/// RATE_LIMITED (1019); the session's own methods are not limited.
+#[test]
+fn requests_beyond_the_rate_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(
+        dir.path(),
+        &[("NICEMAILER_TEST_RATE_BURST", "3"), ("NICEMAILER_TEST_RATE_PER_SEC", "0")],
+    );
+    // `hello` is one of the session's own: it goes through whatever the rate.
+    let mut c = Client::connect(dir.path());
+    let ids: Vec<u64> = (0..6).map(|_| c.send("list_folders", json!({}))).collect();
+    let mut ok = 0;
+    let mut limited = 0;
+    for _ in 0..6 {
+        let (id, res) = c.response();
+        assert!(ids.contains(&id), "answer of an unknown id {id}");
+        match res {
+            Ok(_) => ok += 1,
+            Err(e) => {
+                assert_eq!(e["code"], json!(1019), "{e}");
+                assert_eq!(e["data"]["reason"], json!("rate_limited"), "{e}");
+                limited += 1;
+            }
+        }
+    }
+    assert_eq!(ok, 3, "the burst went through");
+    assert_eq!(limited, 3, "the rest was refused");
+}

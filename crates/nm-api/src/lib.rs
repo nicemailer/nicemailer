@@ -352,6 +352,10 @@ pub mod error_code {
     /// (`ai_not_logged_in`, `ai_bad_input`, `ai_provider_unsafe`…,
     /// `ia.md`, sections 3 and 10).
     pub const AI: i64 = 1018;
+    /// The connection sends requests faster than the core accepts: the
+    /// request is refused until the client slows down
+    /// (`architecture.md`, section 9, "limite de débit").
+    pub const RATE_LIMITED: i64 = 1019;
 }
 
 /// Why a request failed, as a stable word and the values of its sentence
@@ -713,6 +717,12 @@ pub mod reason {
         NEWER_SCHEMA = "newer_schema": "the database was written by a newer NiceMailer (version {from}, this core reads {to})";
         /// The upgrade of the database failed.
         MIGRATION_FAILED = "migration_failed": "the upgrade of the database failed: {message}";
+
+        // --- Transport limits (`architecture.md`, section 9) ---
+
+        /// The connection sends requests faster than the core accepts: it
+        /// is refused until it slows down.
+        RATE_LIMITED = "rate_limited": "too many requests: slow down";
     }
 }
 

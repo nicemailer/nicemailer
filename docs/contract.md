@@ -334,3 +334,4 @@ The app, the core, the CLI and the MCP server are shipped and updated together, 
 | `migration` | `from`, `to` | the database is being upgraded (version {from} to {to}) |
 | `newer_schema` | `from`, `to` | the database was written by a newer NiceMailer (version {from}, this core reads {to}) |
 | `migration_failed` | `message` | the upgrade of the database failed: {message} |
+| `rate_limited` | — | too many requests: slow down |

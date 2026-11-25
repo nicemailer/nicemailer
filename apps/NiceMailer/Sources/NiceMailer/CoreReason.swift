@@ -38,6 +38,7 @@ enum CoreReason {
         "compose_format_unknown",
         "draft_by_user",
         "reply_started_by_user",
+        "rate_limited",
     ]
 
     static let log = Logger(subsystem: "eu.nicemailer.app", category: "core-reason")

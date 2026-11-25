@@ -191,6 +191,11 @@ struct Core {
     /// (`HANDSHAKE_TIMEOUT`; the tests override it with
     /// `NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS`).
     handshake_timeout: Duration,
+    /// The rate limit of one connection (`RATE_BURST`, `RATE_PER_SEC`; the
+    /// tests override them with `NICEMAILER_TEST_RATE_BURST` and
+    /// `NICEMAILER_TEST_RATE_PER_SEC`).
+    rate_burst: f64,
+    rate_per_sec: f64,
     /// Immutable raw message files (`stockage-brut.md`).
     raw: RawStore,
     /// Attachments extracted from them on demand (`attachments.rs`).
@@ -379,6 +384,8 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
             .and_then(|v| v.parse().ok())
             .map(Duration::from_millis)
             .unwrap_or(HANDSHAKE_TIMEOUT),
+        rate_burst: std::env::var("NICEMAILER_TEST_RATE_BURST").ok().and_then(|v| v.parse().ok()).unwrap_or(RATE_BURST),
+        rate_per_sec: std::env::var("NICEMAILER_TEST_RATE_PER_SEC").ok().and_then(|v| v.parse().ok()).unwrap_or(RATE_PER_SEC),
         raw,
         attachments,
         outgoing,
@@ -856,6 +863,45 @@ const MAX_CONNECTIONS: usize = 64;
 /// task and a file descriptor for nothing (`architecture.md`, section 9).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The requests of one connection may burst up to this many at once: the
+/// app's single connection reloads its lists in bursts during an import,
+/// which the burst absorbs (`architecture.md`, section 9, "limite de
+/// débit").
+const RATE_BURST: f64 = 100.0;
+
+/// Then this many requests per second, on average; beyond, the request is
+/// refused with `RATE_LIMITED`.
+const RATE_PER_SEC: f64 = 20.0;
+
+/// The rate limit of one connection: a token bucket — `burst` requests may
+/// go at once, then `per_sec` per second on average. A pure function of
+/// the instants, tested alone below.
+struct RateLimit {
+    burst: f64,
+    per_sec: f64,
+    tokens: f64,
+    last: Instant,
+}
+
+impl RateLimit {
+    fn new(burst: f64, per_sec: f64) -> RateLimit {
+        RateLimit { burst, per_sec, tokens: burst, last: Instant::now() }
+    }
+
+    /// Whether a request may go at `now`, taking one token if so.
+    fn allow(&mut self, now: Instant) -> bool {
+        let elapsed = now.saturating_duration_since(self.last);
+        self.tokens = (self.tokens + elapsed.as_secs_f64() * self.per_sec).min(self.burst);
+        self.last = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// Whether a method only reads, and so may run alongside the other
 /// requests of its connection.
 ///
@@ -970,6 +1016,9 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
     // that never sends its `hello` is closed (`HANDSHAKE_TIMEOUT`).
     let handshake = tokio::time::sleep(core.handshake_timeout);
     tokio::pin!(handshake);
+    // The rate limit of this connection; the session's own methods are not
+    // limited (they change nothing), everything else is.
+    let mut rate = RateLimit::new(core.rate_burst, core.rate_per_sec);
     loop {
         // `read_line` returns `Ok(None)` when the client closes the
         // connection. No `await` inside the `select!` branches: the
@@ -1027,6 +1076,15 @@ async fn serve(core: Arc<Core>, stream: UnixStream) -> anyhow::Result<()> {
             // A client let in by no maintenance: told so, then closed.
             let refused = req.method == method::HELLO && matches!(&result, Err(e) if e.code == error_code::MAINTENANCE);
             if respond(&out, req.id.map(|id| reply(id, result))).await.is_err() || refused {
+                break;
+            }
+            continue;
+        }
+        // Beyond its rate, the connection's requests are refused, not
+        // queued: a client that floods gets an answer, not a wait.
+        if !rate.allow(Instant::now()) {
+            let r = req.id.map(|id| Response::err(id, RpcError::new(error_code::RATE_LIMITED, reason::RATE_LIMITED)));
+            if respond(&out, r).await.is_err() {
                 break;
             }
             continue;
@@ -2617,6 +2675,23 @@ fn run_import(core: Arc<Core>, job_id: u64, opts: ImportOptions) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The token bucket lets the burst through, refuses beyond it, and
+    /// refills with time, never holding more than the burst.
+    #[test]
+    fn rate_limit_lets_the_burst_through_then_refills() {
+        let start = Instant::now();
+        let mut r = RateLimit::new(3.0, 10.0);
+        assert!(r.allow(start) && r.allow(start) && r.allow(start), "the burst goes at once");
+        assert!(!r.allow(start), "the burst is spent");
+        assert!(!r.allow(start + Duration::from_millis(50)), "half a token is not a token");
+        assert!(r.allow(start + Duration::from_millis(100)), "one token refilled in 100 ms at 10/s");
+        assert!(!r.allow(start + Duration::from_millis(100)));
+        // After a long idle, the bucket is full again, but not more.
+        let later = start + Duration::from_secs(3600);
+        assert!(r.allow(later) && r.allow(later) && r.allow(later));
+        assert!(!r.allow(later), "capped at the burst");
+    }
 
     /// The line of the start: the total, then each step in its order.
     #[test]
