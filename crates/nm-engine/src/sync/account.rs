@@ -373,6 +373,8 @@ async fn connect(w: &Shared, conn: Conn) -> Result<(Session, Option<Namespace>),
     // server all the same.
     w.pace.lock().unwrap().record(clock::now());
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| refused(w, conn, e, false))?;
+    // The name of the connection in the debug log (`NICEMAILER_IMAP_LOG`).
+    s.set_trace_label(&format!("{}/{}", w.spec.key, if matches!(conn, Conn::Work) { "work" } else { "bodies" }));
     // A read-only account: the session itself refuses any writing command,
     // whatever the rest of NiceMailer asks.
     if cfg.read_only {

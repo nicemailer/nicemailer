@@ -6,7 +6,8 @@
 //! - `encode.rs`: writing commands, and quoting what comes from outside;
 //! - `convert.rs`: from the types of `imap-codec` to ours;
 //! - `transport.rs`: TCP, TLS, STARTTLS and certificates;
-//! - `utf7.rs`: modified UTF-7, the encoding of mailbox names.
+//! - `utf7.rs`: modified UTF-7, the encoding of mailbox names;
+//! - `trace.rs`: the debug log of the conversation, `NICEMAILER_IMAP_LOG`.
 //!
 //! This module knows nothing of the database, the accounts or the
 //! Keychain: it talks to one server for whoever calls it. `nm-engine`
@@ -34,6 +35,7 @@ mod convert;
 mod encode;
 mod error;
 mod session;
+mod trace;
 pub(crate) mod transport;
 mod types;
 pub mod utf7;

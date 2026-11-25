@@ -43,6 +43,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use super::convert::{self, Data_, Done, Kind, Resp, RespCode};
 use super::encode::{self, Command, Part};
 use super::error::{ImapError, Result};
+use super::trace;
 use super::transport::{self, Conn, Stream};
 use super::types::*;
 
@@ -116,6 +117,16 @@ pub struct Session {
     malformed: Option<String>,
     /// Writing commands refused before they leave (`forbid_writes`).
     read_only: bool,
+    /// The number of this connection in the debug log (`trace.rs`), 0
+    /// when the log is off.
+    trace_id: u64,
+    /// Who this connection is in the debug log: the server at first, the
+    /// account and the connection once the caller says
+    /// ([`Session::set_trace_label`]).
+    trace_label: String,
+    /// The lines being sent carry credentials (`LOGIN`, `AUTHENTICATE`):
+    /// they stay out of the debug log.
+    trace_mute: bool,
 }
 
 impl Session {
@@ -126,6 +137,9 @@ impl Session {
     pub async fn connect(spec: &ServerSpec, timeouts: Timeouts) -> Result<Session> {
         let conn = transport::open(spec, &timeouts).await?;
         let mut s = Session::new(conn, timeouts);
+        if s.trace_id != 0 {
+            s.trace_label = format!("{}:{}", spec.host, spec.port);
+        }
         s.greeting().await?;
         if spec.security == Security::Starttls {
             s.starttls(spec).await?;
@@ -164,6 +178,19 @@ impl Session {
             bye: None,
             malformed: None,
             read_only: false,
+            trace_id: trace::next_id(),
+            trace_label: "stream".into(),
+            trace_mute: false,
+        }
+    }
+
+    /// Names this connection in the debug log (`NICEMAILER_IMAP_LOG`,
+    /// `trace.rs`), e.g. `outlook/work`: the synchronization knows the
+    /// account and the connection, this module only the server. Nothing
+    /// when the log is off.
+    pub fn set_trace_label(&mut self, label: &str) {
+        if self.trace_id != 0 {
+            self.trace_label = label.to_string();
         }
     }
 
@@ -242,6 +269,9 @@ impl Session {
         loop {
             if self.frag.progress().is_some() {
                 if self.frag.is_message_complete() {
+                    if self.trace_id != 0 {
+                        trace::line(self.trace_id, &self.trace_label, trace::Way::Received, self.frag.message_bytes());
+                    }
                     return Ok(());
                 }
                 continue;
@@ -334,6 +364,10 @@ impl Session {
     /// a slow line goes through as long as it moves.
     async fn write(&mut self, bytes: &[u8]) -> Result<()> {
         let io = self.timeouts.io;
+        // The line end that closes a command after a literal says nothing.
+        if self.trace_id != 0 && !self.trace_mute && bytes != b"\r\n" {
+            trace::line(self.trace_id, &self.trace_label, trace::Way::Sent, bytes);
+        }
         let Some(conn) = self.conn.as_mut() else { return Err(ImapError::Closed) };
         for piece in bytes.chunks(READ_BUF) {
             tokio::time::timeout(io, conn.write_all(piece))
@@ -357,6 +391,7 @@ impl Session {
     /// turns them into errors, after the untagged responses were sorted.
     async fn run(&mut self, cmd: Command) -> Result<Reply> {
         let r = self.run_inner(cmd, false).await;
+        self.trace_mute = false;
         r.map_err(|e| self.fail(e))
     }
 
@@ -365,6 +400,7 @@ impl Session {
     /// `NO` is read (`specifications/oauth2.md`, section 7).
     async fn run_sasl(&mut self, cmd: Command) -> Result<Reply> {
         let r = self.run_inner(cmd, true).await;
+        self.trace_mute = false;
         r.map_err(|e| self.fail(e))
     }
 
@@ -374,6 +410,22 @@ impl Session {
         }
         self.malformed = None;
         let tag = self.tag();
+        // The credentials of a login never reach the debug log: its tag and
+        // name instead, and the server's answer as usual (`run` and
+        // `run_sasl` end the mute).
+        if self.trace_id != 0 && matches!(cmd.name, "LOGIN" | "AUTHENTICATE") {
+            // The mechanism (`PLAIN`, `XOAUTH2`) is NiceMailer's own word,
+            // the second of the command; what follows it is the secret.
+            let mechanism = match (cmd.name, cmd.parts.first()) {
+                ("AUTHENTICATE", Some(Part::Text(t))) => {
+                    t.split(|&b| b == b' ').nth(1).map(|m| format!(" {}", String::from_utf8_lossy(m))).unwrap_or_default()
+                }
+                _ => String::new(),
+            };
+            let said = format!("{tag} {}{mechanism} (credentials not logged)", cmd.name);
+            trace::line(self.trace_id, &self.trace_label, trace::Way::Sent, said.as_bytes());
+            self.trace_mute = true;
+        }
         let mut untagged = Vec::new();
         let mut line: Vec<u8> = Vec::with_capacity(256);
         line.extend_from_slice(tag.as_bytes());

@@ -42,6 +42,7 @@ async fn verify(spec: &AccountSpec, secrets: &dyn Secrets, host: &dyn SyncHost, 
     let cfg = &spec.config;
     let password = secrets::imap_password(secrets, &spec.key, cfg).map_err(|r| r.message(&spec.key, cfg))?;
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| e.to_string())?;
+    s.set_trace_label(&format!("{}/verify", spec.key));
     // Verifying reads only.
     s.forbid_writes();
     s.login(&cfg.imap.username, password.expose()).await.map_err(|e| e.to_string())?;

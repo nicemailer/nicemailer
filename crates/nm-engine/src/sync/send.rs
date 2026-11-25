@@ -387,6 +387,7 @@ async fn search(s: &mut Session, mailbox: &MailboxName, message_id: &str) -> Res
 async fn imap_session(sx: &Sender<'_>) -> Result<Session, ImapError> {
     let cfg = &sx.spec.config;
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await?;
+    s.set_trace_label(&format!("{}/send", sx.spec.key));
     if cfg.auth == crate::config::AuthMethod::Oauth2 {
         login_oauth2(&mut s, sx, &cfg.imap.username).await?;
     } else {

@@ -1546,6 +1546,7 @@ version = "0.2.1"
 dependencies = [
  "hickory-resolver",
  "imap-codec",
+ "libc",
  "nm-core",
  "rand 0.9.5",
  "rustls-pki-types",

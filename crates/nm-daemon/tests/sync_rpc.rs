@@ -810,6 +810,68 @@ fn a_body_of_another_size_than_announced_is_stored() {
     verify_ok(&mut c);
 }
 
+/// `NICEMAILER_IMAP_LOG` writes the conversation with the server
+/// (`docs/imap.md`, "Debug log"): each connection named by its account,
+/// what the server says during IDLE (the `EXISTS` of a new mail), and
+/// never the credentials of the login.
+#[test]
+#[ignore = "needs the test servers: make imap-up, then make imap-test"]
+fn the_imap_log_shows_idle_and_hides_the_password() {
+    let dir = tempfile::tempdir().unwrap();
+    let user = new_user();
+    let mut phone = Phone::open(FULL, &user);
+    std::fs::write(dir.path().join("accounts.toml"), config(FULL, &user, "")).unwrap();
+    let log = dir.path().join("imap.log");
+    let _core = common::start_with(dir.path(), &[("NICEMAILER_IMAP_LOG", log.to_str().unwrap())]);
+    let mut c = Client::connect(dir.path());
+    c.call("set_password", json!({"account": "dovecot", "password": "nicemailer"})).unwrap();
+    let passes = settled(&mut c, 0);
+    c.call("subscribe", json!({})).unwrap();
+    c.clear_events();
+    phone.deliver("INBOX", "e", &[]);
+    c.event("MessageArrived", 30);
+    settled(&mut c, passes);
+
+    let text = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    // `14:42:31.207 #3 dovecot/work S: * 1 EXISTS`: the time, the
+    // connection, the way.
+    let idle = lines.iter().position(|l| l.contains(" dovecot/work C: ") && l.ends_with(" IDLE")).unwrap_or_else(|| panic!("no IDLE:\n{text}"));
+    assert!(lines[idle..].iter().any(|l| l.contains(" dovecot/work S: * 1 EXISTS")), "the EXISTS of the new mail:\n{text}");
+    assert!(lines.iter().any(|l| l.contains(" dovecot/bodies C: ")), "the body connection is named too");
+    let time = lines[idle].split(' ').next().unwrap();
+    assert!(time.len() == 12 && time.as_bytes()[2] == b':' && time.as_bytes()[8] == b'.', "{time}");
+    // The logins: their tag and name only, the server's answer as usual.
+    let logins: Vec<&&str> = lines.iter().filter(|l| l.contains(" C: ") && (l.contains(" LOGIN") || l.contains(" AUTHENTICATE"))).collect();
+    assert!(!logins.is_empty(), "{text}");
+    for l in &logins {
+        assert!(l.ends_with("(credentials not logged)"), "{l}");
+    }
+    // Neither the password nor its base64 (AUTHENTICATE PLAIN), anywhere.
+    let plain = format!("\0{user}\0nicemailer");
+    let b64 = base64(plain.as_bytes());
+    assert!(!text.contains(&b64), "the base64 credentials leaked:\n{text}");
+    assert!(!lines.iter().any(|l| l.contains(" C: ") && l.contains(" nicemailer")), "the password leaked:\n{text}");
+}
+
+/// Standard base64, for the test above only.
+fn base64(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(T[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// Actions of the spool queued before an update run after it, once each
 /// (`mise-a-jour.md`, section 7): five moves, then at once the app prepares
 /// the update (the workers stop, what was not sent stays queued), the core
