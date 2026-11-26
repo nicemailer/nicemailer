@@ -190,6 +190,7 @@ The same disk image is installable with Homebrew from the tap [`nicemailer/homeb
 The notes of each release come from `CHANGELOG.md` at the root of the repository, written by hand for users (its header gives the rules):
 
 - a change users can notice adds its entry under `## Unreleased` in the same commit;
+- before the release, the section is reread: most visible changes first, entries that only adjust another one of the same release folded into it, and one or two sentences at its top that sum it up;
 - the commit that raises `version` in `Cargo.toml` renames that section to `## <version> — <YYYY-MM-DD>` and starts a new, empty `## Unreleased` above it.
 
 `scripts/release-notes.py <version>` prints the body of the section of a version, up to the next `## ` heading, and refuses (exit code 1, with what to fix) a version without a section or with an empty one, and entries left under `## Unreleased`, which would be changes shipped without their notes. `make release` runs it before the build. Commit messages are not used: they are written for developers.
