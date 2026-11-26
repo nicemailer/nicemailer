@@ -339,6 +339,14 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     // with its default (`configuration.md`, section 3). Failing to create
     // them (a read-only folder) is not fatal: missing files mean the
     // defaults and no account.
+    // First, before `create_missing` creates themes/: an install from
+    // before the themes keeps the geek look it had (`themes.md`, "The
+    // default theme"); new installs get the default, clean.
+    match nm_engine::config_write::keep_geek_for_earlier_install(&config_path) {
+        Ok(true) => eprintln!("config : ui.theme = \"geek\" écrit dans {} (installation d'avant les thèmes)", config_path.display()),
+        Ok(false) => {}
+        Err(e) => eprintln!("config : thème d'avant les thèmes non écrit ({e})"),
+    }
     match nm_engine::config_write::create_missing(&config_path) {
         Ok(created) => {
             for path in created {

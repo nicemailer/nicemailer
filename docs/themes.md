@@ -17,9 +17,23 @@ In `config.toml`:
 theme = "clean"
 ```
 
-`geek` is the default. The name is that of a built-in theme or of a file of `themes/`. From the keyboard, `v` `t` (Show, theme…) in the main window opens a picker of the themes the core lists (`theme_list`), on the one in effect; Return writes the one chosen in `config.toml` (`config_set_theme`, keeping the rest of the file), and a theme whose file is refused says why instead of being chosen. A name that names no theme is not an error of `config.toml` (the accounts stay on): geek is applied, with a warning. The change applies at once, without restarting.
+`clean` is the default ("The default theme" below). The name is that of a built-in theme or of a file of `themes/`. From the keyboard, `v` `t` (Show, theme…) in the main window opens a picker of the themes the core lists (`theme_list`), on the one in effect; Return writes the one chosen in `config.toml` (`config_set_theme`, keeping the rest of the file), and a theme whose file is refused says why instead of being chosen. A name that names no theme is not an error of `config.toml` (the accounts stay on): clean is applied, with a warning. The change applies at once, without restarting.
 
 `ui.title_bar` is replaced by `title_bar` in the `[window]` table of the theme: `shown`, `hidden`, or `merged`, the red, yellow and green buttons over the left end of the status bar, which leaves them room (with the status bar at the bottom or hidden, the title bar is shown). Written in `config.toml`, `ui.title_bar` is still applied, with a warning.
+
+### The default theme
+
+A new install opens on **clean**: `config.toml`, created at the first start, leaves `ui.theme` commented out, and clean is the default (`DEFAULT_THEME`, `crates/nm-engine/src/theme/catalog.rs`). The default is also the parent of a theme without `extends`, and the theme applied in place of one that names nothing or is refused.
+
+An install from before the themes (NiceMailer 0.2 and earlier) keeps **geek**, the only look it had: its user never chose a theme, there was none to choose, and an update should not change the app under them. At the first start of the new version, before it creates `themes/`, the core writes `theme = "geek"` in the `[ui]` table of their `config.toml`, keeping the rest of the file, and says so in its log (`config_write::keep_geek_for_earlier_install`). Such an install is recognized by a `config.toml` without the folder `themes/` next to it: the core creates that folder at every start since the themes came, so the pair is seen at one start only. The line is not written when:
+
+- `ui.theme` is already written, even to geek: it is a choice;
+- the core refuses `config.toml`: the file is the user's to fix first;
+- `config.toml` is a symbolic link that points nowhere. A link that points to a file has that file written, and stays a link.
+
+A user who wants clean afterwards chooses it with `v` `t`, or removes the line: the core never writes it again.
+
+The app draws geek until the core answers `theme_get`, a moment at launch: its unit tests share one theme store and were written for geek.
 
 ## The files
 
@@ -43,7 +57,7 @@ background = { light = "#F6F0E4", dark = "#221E18" }
 text = { light = "#3B3025", dark = "#E8DFD0" }
 ```
 
-Without `extends`, the parent is geek, with a warning. A theme can extend a theme of yours that extends a built-in one, up to 8 levels. A parent is used as it is, your changes included: a theme that extends clean follows what you changed in `clean.toml`.
+Without `extends`, the parent is the default theme, clean, with a warning. A theme can extend a theme of yours that extends a built-in one, up to 8 levels. A parent is used as it is, your changes included: a theme that extends clean follows what you changed in `clean.toml`.
 
 A theme holds data only: no code, no image, no font, no address to load. A theme someone sends you can be put in the folder without risk.
 

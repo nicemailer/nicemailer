@@ -456,7 +456,7 @@ fn uncommenting_an_opt_in_switch_chooses_its_unusual_value() {
     let commented = settings(&text).unwrap().config;
     assert!(!commented.unsubscribe.in_banned, "commented: the default");
     assert_eq!(commented.ui.title_bar, None);
-    assert_eq!(commented.ui.theme, "geek");
+    assert_eq!(commented.ui.theme, "clean");
     assert!(!commented.ui.auto_confirm_calls && !commented.ai.enabled);
     let on = text.replace("\n# in_banned = true\n", "\nin_banned = true\n");
     assert!(settings(&on).unwrap().config.unsubscribe.in_banned);
@@ -565,7 +565,7 @@ fn the_title_bar_is_the_themes_unless_written() {
 
 #[test]
 fn the_theme_is_a_name_of_file() {
-    assert_eq!(settings("").unwrap().config.ui.theme, "geek");
+    assert_eq!(settings("").unwrap().config.ui.theme, "clean", "the default theme");
     assert_eq!(settings("[ui]\ntheme = \"sepia-2\"\n").unwrap().config.ui.theme, "sepia-2");
     // A name that names no theme is not an error of config.toml: the
     // theme says it (a warning of `theme_get`), the accounts stay on.

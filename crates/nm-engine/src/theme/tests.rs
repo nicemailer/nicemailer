@@ -1,6 +1,6 @@
 //! Tests of the themes (`themes.md`, section 11).
 
-use super::catalog::{BUILTINS, KEYS};
+use super::catalog::{BUILTINS, DEFAULT_THEME, KEYS};
 use super::*;
 
 fn ok(name: &str, text: &str) -> Layer {
@@ -303,9 +303,9 @@ fn the_blocks_are_replaced_whole() {
 }
 
 #[test]
-fn without_extends_the_parent_is_geek_with_a_warning() {
+fn without_extends_the_parent_is_the_default_with_a_warning() {
     let r = resolve("plain", &layers(&[("plain", "[layout]\nzebra = true\n")])).unwrap();
-    assert_eq!(r.chain, vec!["plain", "geek"]);
+    assert_eq!(r.chain, vec!["plain", DEFAULT_THEME]);
     assert_eq!(r.warnings.len(), 1);
     assert_eq!(r.warnings[0].key.as_deref(), Some("extends"));
 }
@@ -506,25 +506,25 @@ fn changing_the_theme_chosen() {
 }
 
 #[test]
-fn a_theme_that_does_not_exist_gives_geek_with_a_warning() {
+fn a_theme_that_does_not_exist_gives_the_default_with_a_warning() {
     let tmp = tempfile::tempdir().unwrap();
     let mut set = ThemeSet::new(tmp.path().join("themes"), "nowhere");
     set.reload(true);
-    assert_eq!(set.applied().name, "geek");
+    assert_eq!(set.applied().name, DEFAULT_THEME);
     let w = set.warnings().iter().find(|w| w.key.as_deref() == Some("ui.theme")).expect("a warning");
     assert_eq!(w.file, "config.toml");
     assert!(w.message.contains("no theme named nowhere"), "{w}");
 }
 
 #[test]
-fn a_theme_refused_at_start_gives_geek_and_says_why() {
+fn a_theme_refused_at_start_gives_the_default_and_says_why() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("themes");
     write(&dir, "sepia", "extends = \"clean\"\n[layout]\nzebra = 7\n");
     let mut set = ThemeSet::new(dir, "sepia");
     let events = set.reload(true);
     assert_eq!(errors(&events), vec!["themes/sepia.toml"]);
-    assert_eq!(set.applied().name, "geek");
+    assert_eq!(set.applied().name, DEFAULT_THEME);
     assert_eq!(set.error().unwrap().file, "themes/sepia.toml");
     let entry = set.list().themes.into_iter().find(|t| t.name == "sepia").unwrap();
     assert!(entry.error.is_some());
@@ -608,7 +608,7 @@ fn the_list_gives_the_builtin_themes_first() {
             ("clean", "builtin", None),
             ("regular", "builtin", None),
             ("minimal", "builtin", None),
-            ("amber", "user", Some("geek")),
+            ("amber", "user", Some(DEFAULT_THEME)),
             ("zen", "user", Some("clean")),
         ]
     );

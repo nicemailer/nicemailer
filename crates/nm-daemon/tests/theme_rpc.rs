@@ -8,7 +8,7 @@ mod common;
 use std::path::Path;
 use std::time::Duration;
 
-use common::{Client, start};
+use common::{Client, start, write_config};
 use serde_json::json;
 
 /// Writes `file` (relative to `dir`) as editors do: a temporary file
@@ -23,7 +23,7 @@ fn save(c: &mut Client, dir: &Path, file: &str, text: &str) {
 }
 
 #[test]
-fn the_builtin_themes_are_created_and_geek_is_sent() {
+fn the_builtin_themes_are_created_and_clean_is_sent() {
     let dir = tempfile::tempdir().unwrap();
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
@@ -32,15 +32,15 @@ fn the_builtin_themes_are_created_and_geek_is_sent() {
         assert_eq!(text, nm_engine::theme::template(name).unwrap());
     }
     let t = c.call("theme_get", json!({})).unwrap();
-    assert_eq!(t["name"], "geek");
-    assert_eq!(t["chain"], json!(["geek"]));
+    assert_eq!(t["name"], "clean", "the default of a new install");
+    assert_eq!(t["chain"], json!(["clean"]));
     assert!(t["path"].as_str().unwrap().ends_with("/themes"));
-    assert_eq!(t["layout"]["row_height"], 20);
-    assert_eq!(t["colors"]["background"], json!({"light": "#FAFAF8", "dark": "#1B1D23"}));
+    assert_eq!(t["layout"]["row_height"], 30);
+    assert_eq!(t["colors"]["background"], json!({"light": "#FFFFFF", "dark": "#1B1D1F"}));
     assert!(t["error"].is_null());
 
     let l = c.call("theme_list", json!({})).unwrap();
-    assert_eq!(l["selected"], "geek");
+    assert_eq!(l["selected"], "clean");
     let names: Vec<_> = l["themes"].as_array().unwrap().iter().map(|t| (t["name"].clone(), t["origin"].clone())).collect();
     // The files created change nothing: the themes are still the built-in
     // ones, not "modified".
@@ -72,12 +72,12 @@ fn the_theme_of_config_toml_is_followed() {
     assert_eq!(t["window"]["bar_type"], "toolbar");
     assert_eq!(t["colors"]["unread"], json!({"system": "accent"}));
 
-    // A name that names no theme: geek, with a warning; config.toml is
+    // A name that names no theme: the default, clean, with a warning; config.toml is
     // still applied (its accounts stay on).
     save(&mut c, dir.path(), "config.toml", "[ui]\ntheme = \"nowhere\"\n");
     c.event("ThemeChanged", 15);
     let t = c.call("theme_get", json!({})).unwrap();
-    assert_eq!(t["name"], "geek");
+    assert_eq!(t["name"], "clean");
     assert!(t["warnings"].as_array().unwrap().iter().any(|w| w["key"] == "ui.theme"), "{t}");
     assert!(c.call("config_status", json!({})).unwrap()["error"].is_null());
 }
@@ -162,7 +162,7 @@ fn config_set_compose_format_writes_the_file_and_applies_it() {
     // mode of the next mails.
     let dir = tempfile::tempdir().unwrap();
     let mine = "# my settings\n[compose]\nundo_send_seconds = 5   # time to think\n";
-    std::fs::write(dir.path().join("config.toml"), mine).unwrap();
+    write_config(dir.path(), mine);
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     assert_eq!(c.call("compose_formats", json!({})).unwrap()["default_format"], "text");

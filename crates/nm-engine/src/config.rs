@@ -1697,7 +1697,7 @@ verify_on_read = {verify_on_read}
 [ui]
 # Milliseconds a mail must stay on screen to count as viewed.
 view_threshold_ms = {view_threshold_ms}
-# The theme of the app: "geek" (the default), "clean", "regular",
+# The theme of the app: "clean" (the default), "geek", "regular",
 # "minimal", or the name of a file of the folder themes/ next to this file,
 # which also holds the four built-in themes, to modify (docs/themes.md).
 # Applied at once.

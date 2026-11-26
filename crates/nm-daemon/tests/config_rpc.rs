@@ -8,7 +8,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Client, start};
+use common::{Client, start, write_config};
 use serde_json::{Value, json};
 
 const ACCOUNT: &str = "[accounts.perso]\nemail = \"me@example.com\"\ndisplay_name = \"Me\"\n\
@@ -43,9 +43,9 @@ fn missing_files_are_created_at_start_and_change_nothing() {
     assert!(status["accounts_path"].as_str().unwrap().ends_with("/accounts.toml"));
     // Every setting listed, commented out: the defaults apply. The
     // window's title bar: the theme's (`themes.md`, section 9), and the
-    // theme geek.
+    // theme clean, the default of a new install.
     assert!(status["ui"]["title_bar"].is_null());
-    assert_eq!(status["ui"]["theme"], "geek");
+    assert_eq!(status["ui"]["theme"], "clean");
     // The app does not confirm calls for the user unless asked.
     assert_eq!(status["ui"]["auto_confirm_calls"], false);
     // The text sizes of the app and of its status bar: 16 and 18 pt.
@@ -66,12 +66,37 @@ fn existing_files_are_kept_as_they_are() {
     let dir = tempfile::tempdir().unwrap();
     // An empty config.toml is the user's choice; only accounts.toml is
     // missing.
-    std::fs::write(dir.path().join("config.toml"), "").unwrap();
+    write_config(dir.path(), "");
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     c.call("config_status", json!({})).unwrap();
     assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), "");
     assert_eq!(std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap(), nm_engine::config::accounts_template());
+}
+
+/// An update from a version before the themes (`themes.md`, "The default
+/// theme"): `config.toml` there, `themes/` not. The core writes geek, the
+/// look the user had, into the file, keeping the rest; and only once.
+#[test]
+fn an_install_from_before_the_themes_keeps_geek() {
+    let dir = tempfile::tempdir().unwrap();
+    let mine = "# my settings\n[ui]\ntext_size = 14\n";
+    std::fs::write(dir.path().join("config.toml"), mine).unwrap();
+    {
+        let _core = start(dir.path());
+        let mut c = Client::connect(dir.path());
+        assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["theme"], "geek");
+        assert_eq!(c.call("theme_get", json!({})).unwrap()["name"], "geek");
+        let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert_eq!(text, format!("{mine}theme = \"geek\"\n"), "the rest of the file is kept");
+        assert!(dir.path().join("themes/clean.toml").exists(), "themes/ created after");
+    }
+    // The user removes the line to get the default: the next start keeps it so.
+    std::fs::write(dir.path().join("config.toml"), mine).unwrap();
+    let _core = start(dir.path());
+    let mut c = Client::connect(dir.path());
+    assert_eq!(c.call("config_status", json!({})).unwrap()["ui"]["theme"], "clean");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), mine);
 }
 
 #[test]
@@ -112,7 +137,7 @@ fn the_call_confirmation_setting_reaches_the_app_and_follows_the_file() {
 #[test]
 fn the_text_sizes_reach_the_app_and_follow_the_file() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("config.toml"), "[ui]\ntext_size = 18\nstatus_bar_text_size = 12\n").unwrap();
+    write_config(dir.path(), "[ui]\ntext_size = 18\nstatus_bar_text_size = 12\n");
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     let ui = &c.call("config_status", json!({})).unwrap()["ui"];
@@ -132,7 +157,7 @@ fn the_text_sizes_reach_the_app_and_follow_the_file() {
 #[test]
 fn the_folder_names_reach_the_app_and_follow_the_file() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("config.toml"), "[folder_names]\nwaiting = \"En attente\"\n").unwrap();
+    write_config(dir.path(), "[folder_names]\nwaiting = \"En attente\"\n");
     let _core = start(dir.path());
     let mut c = Client::connect(dir.path());
     let names = c.call("config_status", json!({})).unwrap()["folder_names"].clone();

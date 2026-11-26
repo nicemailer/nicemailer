@@ -244,8 +244,11 @@ final class ThemeStore {
     /// run in parallel.
     static let shared = ThemeStore(drivesPalette: true)
 
-    /// The theme the views draw. Geek until the core answers: the theme the
-    /// app opens on by default.
+    /// The theme the views draw. Geek until the core answers, although the
+    /// core's default is clean (`defaultName`): the unit tests share
+    /// `ThemeStore.shared` and were written for geek, so the app opening on
+    /// clean waits for them to say their theme. Until then, a new install
+    /// shows geek for the moment the core takes to answer `theme_get`.
     private(set) var current: ThemeView
 
     /// Changes at each new theme: the window is rebuilt with it
@@ -284,6 +287,11 @@ final class ThemeStore {
     nonisolated static var colors: ThemeColors { active.colors }
     private nonisolated(unsafe) static var stored: ThemeView = builtins["geek"]!
     private nonisolated static let lock = NSLock()
+
+    /// The name of the core's default theme, `DEFAULT_THEME`
+    /// (`crates/nm-engine/src/theme/catalog.rs`), the parent of a theme
+    /// that does not say its own: a test checks they agree.
+    nonisolated static let defaultName = "clean"
 
     /// The four built-in themes resolved, embedded in the app
     /// (`Resources/themes-builtin.json`, written by the core: `nicemailer

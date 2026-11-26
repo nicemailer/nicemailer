@@ -14,9 +14,10 @@
 //! - it is written atomically: a temporary file next to it, then `rename`.
 //!   A crash leaves the old file or the new one, never half of one.
 //!
-//! The core writes a file on its own only to create it, at its start, when
-//! it is missing ([`create_missing`]); it never changes an existing file
-//! but at a client's request.
+//! The core writes a file on its own only at its start: to create it when
+//! it is missing ([`create_missing`]), and once, to keep the geek theme of
+//! an install from before the themes ([`keep_geek_for_earlier_install`]).
+//! Otherwise it changes an existing file only at a client's request.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -329,6 +330,54 @@ pub fn create_missing(config_path: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(created)
 }
 
+/// The theme that users of an install from before the themes keep:
+/// the look the app had then.
+pub const EARLIER_INSTALL_THEME: &str = "geek";
+
+/// Writes `ui.theme = "geek"` into the `config.toml` of an install made
+/// before the themes existed, so that the update does not change its look;
+/// returns whether it did (`themes.md`, "The default theme").
+///
+/// The default theme is clean, for new installs. A user of NiceMailer 0.2
+/// or earlier has always seen the geek look, never chose it (there was
+/// nothing to choose), and their `config.toml` has no `ui.theme`: without
+/// this, the update would switch them to clean.
+///
+/// How such an install is recognized: `config.toml` exists but the folder
+/// `themes/` does not. The core creates that folder at every start
+/// ([`create_missing`]) since the version that brought the themes, so the
+/// pair means "written by an earlier version", and is true at one start
+/// only. Hence the order: **call it before `create_missing`**, which
+/// creates the folder. A new install has neither, and gets the default.
+///
+/// The file stays the user's ([`set_config_value`] keeps its comments):
+/// - a `ui.theme` already written, even to geek, is a choice: left alone;
+/// - a file the core refuses is not touched: the user fixes it first,
+///   and meanwhile the defaults apply, as for any refused file;
+/// - a symbolic link (a dotfiles repository) is followed, and the file it
+///   points to is written, so the link stays a link; a link that points
+///   nowhere is left alone, as `create_missing` does.
+pub fn keep_geek_for_earlier_install(config_path: &Path) -> Result<bool, String> {
+    let themes = crate::theme::dir(config_path);
+    // `symlink_metadata` describes a link itself, so a dangling link
+    // still counts as there.
+    if std::fs::symlink_metadata(config_path).is_err() || std::fs::symlink_metadata(&themes).is_ok() {
+        return Ok(false);
+    }
+    // The file to write: the target of a link. `canonicalize` fails for a
+    // dangling link, which is left alone.
+    let Ok(target) = std::fs::canonicalize(config_path) else { return Ok(false) };
+    let text = std::fs::read_to_string(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+    let Ok(doc) = text.parse::<DocumentMut>() else { return Ok(false) };
+    let chosen = doc.get("ui").and_then(Item::as_table_like).is_some_and(|ui| ui.contains_key("theme"));
+    if chosen || config::parse(&text, "").is_err() {
+        return Ok(false);
+    }
+    let out = set_config_value(&text, "ui", "theme", EARLIER_INSTALL_THEME)?;
+    write_atomic(&target, &out)?;
+    Ok(true)
+}
+
 /// Creates `path` with `text` unless something is already there; returns
 /// whether it did.
 fn create_if_missing(path: &Path, text: &str) -> Result<bool, String> {
@@ -605,6 +654,94 @@ port = 993\nsecurity = \"tls\"\n";
         std::fs::remove_file(dir.path().join("accounts.toml")).unwrap();
         assert_eq!(create_missing(&path).unwrap(), vec![dir.path().join("accounts.toml")]);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+    }
+
+    /// The `ui.theme` the file in `path` gives, and whether it writes one.
+    fn theme_of(path: &Path) -> (String, bool) {
+        let text = std::fs::read_to_string(path).unwrap();
+        let written = text.parse::<DocumentMut>().unwrap().get("ui").and_then(Item::as_table_like).is_some_and(|t| t.contains_key("theme"));
+        (config::parse(&text, "").unwrap().config.ui.theme, written)
+    }
+
+    #[test]
+    fn a_new_install_gets_the_default_theme_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nicemailer/config.toml");
+        // The order of the core's start: nothing there yet.
+        assert!(!keep_geek_for_earlier_install(&path).unwrap());
+        create_missing(&path).unwrap();
+        assert_eq!(theme_of(&path), ("clean".to_string(), false), "the template leaves it commented");
+        // At the next start, themes/ is there: nothing is written.
+        assert!(!keep_geek_for_earlier_install(&path).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), config::config_template());
+    }
+
+    #[test]
+    fn an_install_from_before_the_themes_keeps_geek() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // A config.toml of 0.2, edited by its user: no ui.theme, no themes/.
+        let before = "version = 1\n\n[ui]\n# my size\ntext_size = 14\n";
+        std::fs::write(&path, before).unwrap();
+        assert!(keep_geek_for_earlier_install(&path).unwrap());
+        assert_eq!(theme_of(&path), ("geek".to_string(), true));
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.starts_with(before), "the user's text is kept whole:\n{after}");
+        // Then the start goes on: themes/ is created, and it never runs again,
+        // even after the user removes the line to get the default.
+        create_missing(&path).unwrap();
+        std::fs::write(&path, before).unwrap();
+        assert!(!keep_geek_for_earlier_install(&path).unwrap());
+        assert_eq!(theme_of(&path), ("clean".to_string(), false));
+    }
+
+    #[test]
+    fn a_file_without_a_ui_table_gets_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        assert!(keep_geek_for_earlier_install(&path).unwrap());
+        assert_eq!(theme_of(&path), ("geek".to_string(), true));
+    }
+
+    #[test]
+    fn a_theme_already_written_is_a_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        for text in ["[ui]\ntheme = \"regular\"\n", "[ui]\ntheme = \"clean\"\n"] {
+            std::fs::write(&path, text).unwrap();
+            assert!(!keep_geek_for_earlier_install(&path).unwrap());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn a_refused_file_is_not_touched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        for text in ["not toml [", "[ui]\ntext_size = \"big\"\n"] {
+            std::fs::write(&path, text).unwrap();
+            assert!(!keep_geek_for_earlier_install(&path).unwrap());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn a_linked_file_is_written_through_its_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let target = dir.path().join("dotfiles.toml");
+        std::fs::write(&target, "[ui]\ntext_size = 14\n").unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        assert!(keep_geek_for_earlier_install(&path).unwrap());
+        assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_symlink(), "still a link");
+        assert_eq!(theme_of(&target), ("geek".to_string(), true));
+        // A link that points nowhere is left alone.
+        let dangling = dir.path().join("other/config.toml");
+        std::fs::create_dir(dir.path().join("other")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing.toml"), &dangling).unwrap();
+        assert!(!keep_geek_for_earlier_install(&dangling).unwrap());
+        assert!(!dir.path().join("missing.toml").exists());
     }
 
     #[test]

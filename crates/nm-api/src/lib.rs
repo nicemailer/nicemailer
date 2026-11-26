@@ -3292,7 +3292,7 @@ pub struct UiConfig {
     /// it still wins while it is written. `None` (absent): the theme's.
     #[serde(default)]
     pub title_bar: Option<String>,
-    /// `ui.theme`: the name of the theme chosen (`geek` by default).
+    /// `ui.theme`: the name of the theme chosen (`clean` by default).
     #[serde(default)]
     pub theme: String,
     /// `ui.auto_confirm_calls`: the app confirms its calls itself

@@ -220,12 +220,15 @@ pub const CONTRAST_PAIRS: &[(&str, &str)] = &[
 /// normal text.
 pub const MIN_CONTRAST: f64 = 4.5;
 
-/// The themes shipped with the app, embedded in the core. The first one is
-/// the default, and the parent of a theme that does not say its own.
+/// The themes shipped with the app, embedded in the core, in the order they
+/// are listed.
 pub const BUILTINS: &[&str] = &["geek", "clean", "regular", "minimal"];
 
-/// The default theme.
-pub const DEFAULT_THEME: &str = "geek";
+/// The default theme (`themes.md`, "The default theme"): the one of a new
+/// install, the parent of a theme that does not say its own, and the one
+/// applied in place of a theme that cannot be. An install from before the
+/// themes keeps geek instead (`config_write::keep_geek_for_earlier_install`).
+pub const DEFAULT_THEME: &str = "clean";
 
 /// Whether `name` can name a theme file: lowercase letters, digits and
 /// hyphens, starting with a letter or a digit, 40 at most.

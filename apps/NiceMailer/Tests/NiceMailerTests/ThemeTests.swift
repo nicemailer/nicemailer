@@ -22,6 +22,20 @@ struct ThemeTests {
         #expect(ThemeStore.builtins["geek"]?.layout.rowHeight == 20)
     }
 
+    /// The default theme the app names (the parent of a theme without
+    /// `extends`, in the theme chooser) is the core's `DEFAULT_THEME`, read
+    /// in its source (`themes.md`, "The default theme"): changing one
+    /// without the other fails here.
+    @Test func theDefaultThemeIsTheCoresOne() throws {
+        // Tests/NiceMailerTests/ThemeTests.swift → the root of the repository.
+        let repo = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let catalog = try String(contentsOf: repo.appendingPathComponent("crates/nm-engine/src/theme/catalog.rs"), encoding: .utf8)
+        #expect(catalog.contains("pub const DEFAULT_THEME: &str = \"\(ThemeStore.defaultName)\";"))
+        #expect(ThemeStore.defaultName == "clean")
+    }
+
     /// minimal is clean in the font of geek, with a smaller bar that
     /// reminds the keys, a wider text, no animation and mails as text
     /// (`themes.md`, "Thème minimal").

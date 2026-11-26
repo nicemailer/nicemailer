@@ -23,7 +23,7 @@ final class ThemeChooser {
             switch origin {
             case "builtin": L("Built in")
             case "builtin_modified": L("Built in, modified by its file")
-            default: L("Extends %@", parent ?? "geek")
+            default: L("Extends %@", parent ?? ThemeStore.defaultName)
             }
         }
     }

@@ -161,6 +161,18 @@ impl Client {
 /// throwaway file `dir/test.keychain-db` (created unlocked; `security
 /// create-keychain` does not add it to the user's search list), never the
 /// login keychain.
+/// Writes `config.toml` in `dir` as this version of NiceMailer leaves it:
+/// with the folder `themes/` next to it. A `config.toml` alone is what an
+/// install from before the themes left, and the core then writes
+/// `ui.theme = "geek"` into it at its start
+/// (`config_write::keep_geek_for_earlier_install`); a test that compares
+/// the file or the keys a save changes writes it this way.
+#[allow(dead_code)] // Rust note: not every test file of `tests/` uses it.
+pub fn write_config(dir: &Path, text: &str) {
+    std::fs::write(dir.join("config.toml"), text).unwrap();
+    std::fs::create_dir_all(dir.join("themes")).unwrap();
+}
+
 pub fn start(dir: &Path) -> Core {
     start_with(dir, &[])
 }

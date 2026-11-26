@@ -742,7 +742,7 @@ enum ThemeAction {
         /// Its name: lowercase letters, digits and hyphens.
         name: String,
         /// The theme it extends.
-        #[arg(long, default_value = "geek")]
+        #[arg(long, default_value = nm_engine::theme::catalog::DEFAULT_THEME)]
         extends: String,
     },
 }
@@ -1597,7 +1597,7 @@ fn run_theme(action: ThemeAction) -> anyhow::Result<()> {
     use nm_engine::{config, theme};
     let config_path = config::default_path();
     let dir = theme::dir(&config_path);
-    // The theme chosen: `ui.theme` of config.toml, geek when the file is
+    // The theme chosen: `ui.theme` of config.toml, the default when the file is
     // missing or refused (`config check` says why).
     let selected = config::read_both(&config_path)
         .ok()

@@ -281,7 +281,7 @@ They are all in `config.toml`; `nicemailer config defaults` prints them all. Ran
 | `raw.verify_on_read` | true | | no (phase 3) |
 | `ui.view_threshold_ms` | 2000 | 0 to 60000 | no |
 | `ui.title_bar` | none | `shown`, `hidden` | replaced by `title_bar` in `[window]` of the theme ([themes.md](themes.md)); still applied while written, with a warning. No longer listed in the created file |
-| `ui.theme` | `geek` | a theme's name: lowercase letters, digits, hyphens | not yet by the app: the theme ([themes.md](themes.md)). A name that names no theme gives geek and a warning, not an error |
+| `ui.theme` | `clean` | a theme's name: lowercase letters, digits, hyphens | not yet by the app: the theme ([themes.md](themes.md)). A name that names no theme gives clean and a warning, not an error. An install from before the themes gets `geek` written at its update ([themes.md](themes.md), "The default theme") |
 | `ui.auto_confirm_calls` | false | | yes: the app applies it at once; it presses the confirmation macOS shows before a call (`geek-ui.md`, "Calling a number") |
 | `ui.text_size` | 16 | 9 to 32 | yes: the app applies it at once; text size of the window except the status bar, in points (`geek-ui.md`, "Text size") |
 | `ui.status_bar_text_size` | 18 | 9 to 32 | yes: the app applies it at once; text size of the status bar, in points |
