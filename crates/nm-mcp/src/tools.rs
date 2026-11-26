@@ -113,6 +113,9 @@ struct Bounds {
 /// The tools, with the link to the core.
 pub struct Tools {
     pub core: CoreLink,
+    /// The home folder, under which an agent may attach files
+    /// ([`attachable`]): `$HOME`, or another folder for the tests.
+    pub home: PathBuf,
 }
 
 /// One tool: its name, its definition for `tools/list`.
@@ -589,7 +592,14 @@ const VIEWS: [&str; 3] = ["work", "all_mail", "everything"];
 
 impl Tools {
     pub fn new(core: CoreLink) -> Tools {
-        Tools { core }
+        Tools { core, home: std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default() }
+    }
+
+    /// The same, with `home` as the home folder (tests: their files are in
+    /// a temporary directory, not in the user's home).
+    pub fn with_home(mut self, home: PathBuf) -> Tools {
+        self.home = home;
+        self
     }
 
     /// Runs the tool `name`; `None`: no such tool (a protocol error).
@@ -935,7 +945,7 @@ impl Tools {
         let d = self.draft_view(a.draft_id, progress).await?;
         let dir = self.core.data_dir(progress).await?;
         let filename = source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
-        let staged = stage(&source, &dir).await?;
+        let staged = stage(&source, &dir, &self.home).await?;
         let params = json!({
             "id": d.id, "revision": d.revision, "staged": staged, "filename": filename, "mime_type": mime_type(&filename),
         });
@@ -991,7 +1001,14 @@ fn nm_api_incoming() -> &'static str {
 ///
 /// On APFS the copy is a clone (`std::fs::copy` uses `fclonefileat`):
 /// instant, no space taken.
-async fn stage(source: &Path, dir: &Path) -> R<String> {
+async fn stage(source: &Path, dir: &Path, home: &Path) -> R<String> {
+    // The real path, links resolved: the rule applies to the file read,
+    // not to the name the agent gave.
+    let real = tokio::fs::canonicalize(source).await.map_err(|e| ToolError::new(format!("{}: {e}", source.display())))?;
+    let home = tokio::fs::canonicalize(home).await.unwrap_or_else(|_| home.to_path_buf());
+    let data = tokio::fs::canonicalize(dir).await.unwrap_or_else(|_| dir.to_path_buf());
+    attachable(&real, &home, &data).map_err(|why| ToolError::new(format!("{}: {why}", source.display())))?;
+    let source = real.as_path();
     let meta = tokio::fs::metadata(source).await.map_err(|e| ToolError::new(format!("{}: {e}", source.display())))?;
     if !meta.is_file() {
         return Err(ToolError::new(format!("{}: not a file", source.display())));
@@ -1004,6 +1021,45 @@ async fn stage(source: &Path, dir: &Path) -> R<String> {
         .map_err(|e| ToolError::new(e.to_string()))?
         .map_err(|e| ToolError::new(format!("{}: cannot be copied for the draft: {e}", source.display())))?;
     Ok(staged)
+}
+
+/// Whether an agent may attach the file at `real` (its canonical path):
+/// a document of the user, not a secret of the system.
+///
+/// Why: a mail is hostile content read by a model that has tools
+/// (`architecture.md`, section 9). An instruction hidden in a mail could
+/// make the agent attach `~/.ssh/id_ed25519` to a draft; the draft goes to
+/// the server's Drafts at once (`mcp.md`, section 5, "Brouillon fermé à
+/// chaque commande"), and comes back by the synchronization as a message
+/// the agent can read (`read_attachment`). So the agent attaches only:
+///
+/// - files under the home folder or on another volume (`/Volumes`);
+/// - never a hidden file or one in a hidden folder (`.ssh`, `.aws`,
+///   `.env`, `.git`…): that is where secrets live;
+/// - never under `~/Library` (keychains, the data of every app, cookies);
+/// - never in NiceMailer's own data directory (the database, the raw mails).
+///
+/// A person attaches anything from the app or the CLI.
+pub(crate) fn attachable(real: &Path, home: &Path, data_dir: &Path) -> Result<(), String> {
+    use std::path::Component;
+    let under_home = !home.as_os_str().is_empty() && real.starts_with(home);
+    // The part of the path below the home folder or `/Volumes`: what the
+    // user named, where a hidden component means a hidden file.
+    let below = match (real.strip_prefix(home), real.strip_prefix("/Volumes")) {
+        (Ok(rel), _) if under_home => rel,
+        (_, Ok(rel)) => rel,
+        _ => return Err("an agent attaches only files of the home folder or of another volume".into()),
+    };
+    if below.components().any(|c| matches!(c, Component::Normal(n) if n.to_string_lossy().starts_with('.'))) {
+        return Err("an agent does not attach a hidden file, nor one in a hidden folder".into());
+    }
+    if under_home && real.starts_with(home.join("Library")) {
+        return Err("an agent does not attach a file of ~/Library".into());
+    }
+    if real.starts_with(data_dir) {
+        return Err("an agent does not attach a file of NiceMailer's data".into());
+    }
+    Ok(())
 }
 
 /// The MIME type of a file from its extension, for the recipient's mail
@@ -1143,6 +1199,54 @@ fn filter(f: &FilterArg) -> R<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An agent attaches documents of the user, never a secret: hidden
+    /// files, `~/Library`, NiceMailer's data, the system.
+    #[test]
+    fn an_agent_attaches_documents_not_secrets() {
+        let home = Path::new("/Users/me");
+        let data = Path::new("/Users/me/Mail/NiceMailer");
+        let ok = |p: &str| attachable(Path::new(p), home, data);
+        assert!(ok("/Users/me/Documents/devis.pdf").is_ok());
+        assert!(ok("/Users/me/Desktop/photo.jpg").is_ok());
+        assert!(ok("/Volumes/USB/rapport.docx").is_ok());
+        for refused in [
+            "/Users/me/.ssh/id_ed25519",
+            "/Users/me/code/app/.env",
+            "/Users/me/code/app/.git/config",
+            "/Users/me/.aws/credentials",
+            "/Users/me/Library/Keychains/login.keychain-db",
+            "/Users/me/Library/Application Support/NiceMailer/nicemailer.db",
+            "/Users/me/Mail/NiceMailer/nicemailer.db",
+            "/etc/passwd",
+            "/private/var/db/x",
+            "/Users/other/Documents/a.pdf",
+        ] {
+            assert!(ok(refused).is_err(), "{refused} was accepted");
+        }
+        // Without a home folder, only another volume.
+        assert!(attachable(Path::new("/Users/me/Documents/a.pdf"), Path::new(""), data).is_err());
+    }
+
+    /// The rule applies to the real path: a link in the Documents towards
+    /// a secret is refused.
+    #[tokio::test]
+    async fn a_link_towards_a_secret_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tokio::fs::canonicalize(root.path()).await.unwrap();
+        std::fs::create_dir_all(home.join(".ssh")).unwrap();
+        std::fs::create_dir_all(home.join("Documents")).unwrap();
+        std::fs::create_dir_all(home.join("data/incoming.noindex")).unwrap();
+        std::fs::write(home.join(".ssh/id"), "secret").unwrap();
+        std::os::unix::fs::symlink(home.join(".ssh/id"), home.join("Documents/innocent.pdf")).unwrap();
+        let err = stage(&home.join("Documents/innocent.pdf"), &home.join("data"), &home).await.unwrap_err();
+        assert!(err.text.contains("hidden"), "{}", err.text);
+        std::fs::write(home.join("Documents/real.pdf"), "doc").unwrap();
+        assert!(stage(&home.join("Documents/real.pdf"), &home.join("data"), &home).await.is_ok());
+        // The data directory itself is refused.
+        std::fs::write(home.join("data/nicemailer.db"), "db").unwrap();
+        assert!(stage(&home.join("data/nicemailer.db"), &home.join("data"), &home).await.is_err());
+    }
 
     fn folder(id: i64, account_id: i64, role: Option<nm_core::FolderRole>) -> FolderView {
         FolderView {

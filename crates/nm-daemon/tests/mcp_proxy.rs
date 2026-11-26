@@ -34,6 +34,8 @@ struct Agent {
     lines: Lines<BufReader<ReadHalf<DuplexStream>>>,
     next_id: u64,
     notifications: Vec<Value>,
+    /// The agent's home folder (`Tools::with_home`), removed with it.
+    home: tempfile::TempDir,
 }
 
 /// Short waits: a test must not wait 30 s for a core that never comes.
@@ -46,10 +48,14 @@ impl Agent {
     async fn start(dir: &Path, version: &str) -> Agent {
         let (client, server) = tokio::io::duplex(1 << 22);
         let (server_read, server_write) = tokio::io::split(server);
-        let tools = Tools::new(CoreLink::new(Some(dir.to_path_buf()), waits()));
+        // The test's files are in a temporary folder of their own: the home
+        // folder an agent may attach from (`nm_mcp::tools::attachable`
+        // refuses the data directory itself). Removed with the agent.
+        let home = tempfile::tempdir().unwrap();
+        let tools = Tools::new(CoreLink::new(Some(dir.to_path_buf()), waits())).with_home(home.path().to_path_buf());
         tokio::spawn(nm_mcp::server::serve(BufReader::new(server_read), server_write, tools));
         let (read, input) = tokio::io::split(client);
-        let mut a = Agent { input, lines: BufReader::new(read).lines(), next_id: 1, notifications: Vec::new() };
+        let mut a = Agent { input, lines: BufReader::new(read).lines(), next_id: 1, notifications: Vec::new(), home };
         let r = a
             .request("initialize", json!({"protocolVersion": version, "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}}))
             .await;
@@ -290,7 +296,7 @@ async fn every_tool_answers_within_its_schema_without_empty_fields() {
         .iter()
         .map(|t| (t["name"].as_str().unwrap().to_string(), t["outputSchema"].clone()))
         .collect();
-    let file = dir.path().join("notes.txt");
+    let file = a.home.path().join("notes.txt");
     std::fs::write(&file, "notes").unwrap();
     let attachment = {
         let t = a.ok("get_conversation", json!({"thread_id": docs})).await;
@@ -511,7 +517,7 @@ async fn the_agent_drafts_its_replies_and_leaves_the_users_alone() {
     // Changed, a file attached: still its own.
     let u = a.ok("update_draft", json!({"draft_id": id, "body": "Oui, jeudi à 10 h.", "cc": "Bob <bob@b.example>"})).await;
     assert_eq!(u["cc"], json!(["Bob <bob@b.example>"]));
-    let file = dir.path().join("plan.pdf");
+    let file = a.home.path().join("plan.pdf");
     std::fs::write(&file, fixtures::pdf_of("Plan")).unwrap();
     let f = a.ok("attach_file", json!({"draft_id": id, "path": file.to_str().unwrap()})).await;
     assert_eq!(f["attachments"][0]["filename"], "plan.pdf");
@@ -523,6 +529,14 @@ async fn the_agent_drafts_its_replies_and_leaves_the_users_alone() {
     assert!(e.contains("absolute"), "{e}");
     let e = a.fails("attach_file", json!({"draft_id": id, "path": "/nonexistent/file.txt"})).await;
     assert!(e.contains("/nonexistent/file.txt"), "{e}");
+    // A secret of the user, or a file of the data directory: refused, even
+    // asked by an agent that a mail told to (`attachable`).
+    std::fs::create_dir_all(a.home.path().join(".ssh")).unwrap();
+    std::fs::write(a.home.path().join(".ssh/id_ed25519"), "secret").unwrap();
+    let e = a.fails("attach_file", json!({"draft_id": id, "path": a.home.path().join(".ssh/id_ed25519")})).await;
+    assert!(e.contains("hidden"), "{e}");
+    let e = a.fails("attach_file", json!({"draft_id": id, "path": dir.path().join("nicemailer.db")})).await;
+    assert!(e.contains("NiceMailer's data") || e.contains("home folder"), "{e}");
 
     // The user's reply to the other mail: the agent may read it only.
     let mut app = Client::connect_as(dir.path(), "app");
