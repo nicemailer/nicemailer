@@ -4,6 +4,7 @@ Run alone: python3 -m unittest discover -s scripts/tests
 """
 
 import importlib.util
+import re
 import unittest
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -52,6 +53,52 @@ class AppcastTests(unittest.TestCase):
         self.assertIn("<ul>\n<li>Updates by Sparkle: &lt;b&gt;no&lt;/b&gt; more downloads by hand.</li>", description)
         self.assertIn("<li>A second line &amp; more.</li>\n</ul>", description)
         self.assertIn("<p>A paragraph ]]&gt; with the end of a CDATA.</p>", description)
+
+    def test_the_theme_of_an_entry_is_bold(self):
+        # The bug this guards: `**Accounts:**` reached Sparkle with its stars.
+        self.assertEqual(make_appcast.notes_html("- **Accounts:** Sign in."),
+                         "<ul>\n<li><strong>Accounts:</strong> Sign in.</li>\n</ul>")
+
+    def test_code_spans_and_links_are_converted(self):
+        self.assertEqual(make_appcast.inline_html("Press `v` `h`."),
+                         "Press <code>v</code> <code>h</code>.")
+        # The Homebrew entry of CHANGELOG.md: code inside a link's label.
+        self.assertEqual(
+            make_appcast.inline_html("the [`nicemailer/homebrew-tap`](https://github.com/nicemailer/homebrew-tap) tap"),
+            'the <a href="https://github.com/nicemailer/homebrew-tap"><code>nicemailer/homebrew-tap</code></a> tap')
+        self.assertEqual(make_appcast.inline_html("**Reset `v` `r`**"),
+                         "<strong>Reset <code>v</code> <code>r</code></strong>")
+
+    def test_markdown_inside_code_stays_literal(self):
+        self.assertEqual(make_appcast.inline_html("`**not bold**` and `[a](https://x)`"),
+                         "<code>**not bold**</code> and <code>[a](https://x)</code>")
+
+    def test_inline_text_is_still_escaped(self):
+        self.assertEqual(make_appcast.inline_html("**<b>&</b>** `<i>`"),
+                         "<strong>&lt;b&gt;&amp;&lt;/b&gt;</strong> <code>&lt;i&gt;</code>")
+        self.assertEqual(make_appcast.inline_html('[x](https://e.org/?a=1&b="2")'),
+                         '<a href="https://e.org/?a=1&amp;b=&quot;2&quot;">x</a>')
+
+    def test_unknown_or_unclosed_markdown_is_left_as_typed(self):
+        self.assertEqual(make_appcast.inline_html("a * b ** c"), "a * b ** c")
+        self.assertEqual(make_appcast.inline_html("`open"), "`open")
+
+    def test_only_web_links_become_links(self):
+        self.assertEqual(make_appcast.inline_html("[x](javascript:alert(1))"), "[x](javascript:alert(1))")
+        self.assertEqual(make_appcast.inline_html("[x](file:///etc/passwd)"), "[x](file:///etc/passwd)")
+
+    def test_no_markdown_marker_reaches_sparkle_from_the_changelog(self):
+        # Every section of the real changelog (Unreleased included), as it would ship.
+        changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+        bodies = changelog.split("\n## ")[1:]
+        self.assertTrue(bodies)
+        for body in bodies:
+            title, _, notes = body.partition("\n")
+            # A marker inside a code span is meant to be shown (an entry may
+            # quote `**`), so code spans are left out of the check.
+            rendered = re.sub(r"<code>.*?</code>", "", make_appcast.notes_html(notes))
+            for marker in ("**", "`", "]("):
+                self.assertNotIn(marker, rendered, f"{marker!r} left in the notes of {title!r}")
 
     def test_a_build_number_that_is_not_a_number_is_refused(self):
         with self.assertRaises(ValueError):

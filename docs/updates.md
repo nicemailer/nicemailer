@@ -76,7 +76,7 @@ Without `sparkle-public-key`, a development build has no updates (the menu item 
 
 - checks, before building, that the private key in the keychain is the one of `sparkle-public-key`;
 - signs the disk image with it (Sparkle's `sign_update`);
-- writes `appcast.xml` next to the image (`scripts/make-appcast.py`): one item, with `sparkle:version` the build number (`CFBundleVersion`, the count of commits, which only grows), the version, macOS 14 at least, the size and signature of the image, and the release notes of `CHANGELOG.md` as HTML;
+- writes `appcast.xml` next to the image (`scripts/make-appcast.py`): one item, with `sparkle:version` the build number (`CFBundleVersion`, the count of commits, which only grows), the version, macOS 14 at least, the size and signature of the image, and the release notes of `CHANGELOG.md` as HTML (lists, `###` titles, and inside a line bold, `code` and https links; everything else escaped);
 - prints the command that publishes both: `gh release create v<version> <dmg> <appcast.xml> …`.
 
 ### Inside the bundle
@@ -99,6 +99,6 @@ Sparkle never starts outside a bundle (`swift run`), without a feed and a key, o
 - `crates/nm-daemon/tests/update_rpc.rs`, the real core: no client served between `prepare_update` and `cancel_update` (an open connection told and closed, a new one refused at `hello`, the app let in but refused everything else); only the app may prepare an update; the timeout; the program replaced, the core leaving with 75, and the new core's `ResyncRequired`; a client told of a migration, with its versions, and a SIGTERM cancelling it; a migration failing halfway, the database put back and the core in maintenance; a newer database never written.
 - `crates/nm-store/src/upgrade.rs` and `tests/migrations.rs`: the backup put back exactly (files added since removed), only our backups removed, a migration failing at version 13 put back at version 1 with its data, the backup kept after a success.
 - `crates/nm-daemon/tests/mcp_proxy.rs`: the MCP server waits through an update, with progress. `crates/nm-cli/tests/maintenance.rs`: the CLI's message and status 75 for each reason, `--wait`.
-- `scripts/tests/test_make_appcast.py`: the appcast as Sparkle reads it, escaped notes.
+- `scripts/tests/test_make_appcast.py`: the appcast as Sparkle reads it, escaped notes, their inline Markdown converted, and no Markdown marker left in any section of `CHANGELOG.md`.
 - Swift: `MaintenanceTests` (the error read as the core sends it, each text, the wait through an update then a migration, a maintenance only the user can end, the restart of a core of another version, when Sparkle starts); the scenario `mailbox.uiscript` (the screens of an update and of a migration, then served; a failed migration and a newer mailbox; no updates in a scenario).
 - Not automated: Sparkle's own download and replacement of a signed bundle, and the restart by launchd. Tried by hand as above before a release (`specifications/plan-release.md`, section 5).

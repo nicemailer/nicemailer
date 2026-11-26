@@ -64,6 +64,7 @@ How to write it:
 - **Screening:** A mail you send from one of your accounts to another stays in the Inbox, even if that address was banned: the addresses of all your accounts (with their identities, and your archive accounts) are yours, not only those of the account that receives.
 - **CLI:** `nicemailer imap probe` and `nicemailer sync verify` work for an Outlook.com or Microsoft 365 account, instead of saying the account must be signed in again.
 - **Sync:** Mail of an Outlook.com or Microsoft 365 account now gets its body, instead of staying "(body not downloaded)": the server announces a size other than the mail it sends, and NiceMailer refused it.
+- **Updates:** In the window that offers an update, the notes show the theme of each change in bold, keys and commands as code, and links that can be clicked, instead of the `**`, backticks and brackets of their Markdown.
 
 ### Removed
 

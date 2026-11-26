@@ -12,7 +12,10 @@ build number, `CFBundleVersion`) is greater than the app's.
 
 The release notes (notes.md, from CHANGELOG.md) are embedded as HTML in
 the item's description, which Sparkle shows: `- ` lines become a list,
-`### ` headings titles, other lines paragraphs. Every text is escaped.
+`### ` headings titles, other lines paragraphs. Inside a line, the inline
+Markdown the changelog uses is converted too: `**bold**` (the theme that
+starts each entry), `` `code` `` and `[text](https://…)` links. Every
+other text is escaped.
 
 Usage: scripts/make-appcast.py --version 0.2.0 --build 812 \\
          --url https://…/NiceMailer-0.2.0.dmg --signature <EdDSA> \\
@@ -21,10 +24,45 @@ Usage: scripts/make-appcast.py --version 0.2.0 --build 812 \\
 
 import argparse
 import html
+import re
 import sys
 from datetime import datetime, timezone
 from email.utils import format_datetime
 from pathlib import Path
+
+
+# The inline Markdown of CHANGELOG.md, one alternative per construct, tried
+# left to right at each position: a code span first, so that `**` or `[`
+# inside one stays literal; then a link; then bold. Only http(s) links are
+# made clickable: the notes are shown in a web view inside the app, and a
+# `javascript:` or `file:` URL has nothing to do there.
+INLINE = re.compile(
+    r"`(?P<code>[^`]+)`"
+    r"|\[(?P<label>[^\]]+)\]\((?P<url>https?://[^)\s]+)\)"
+    r"|\*\*(?P<bold>.+?)\*\*")
+
+
+def inline_html(text):
+    """One line of Markdown as HTML: bold, code and links converted, the rest escaped.
+
+    A link's label and a bold text may hold code (the Homebrew entry links
+    `` [`nicemailer/homebrew-tap`](…) ``), so they are converted in turn;
+    the text of a code span is only escaped. Markdown this does not know
+    (a lone `*`, an unclosed `**`) is left as typed, escaped.
+    """
+    out = []
+    pos = 0
+    for m in INLINE.finditer(text):
+        out.append(html.escape(text[pos:m.start()]))
+        if m.group("code") is not None:
+            out.append(f"<code>{html.escape(m.group('code'))}</code>")
+        elif m.group("url") is not None:
+            out.append(f'<a href="{html.escape(m.group("url"))}">{inline_html(m.group("label"))}</a>')
+        else:
+            out.append(f"<strong>{inline_html(m.group('bold'))}</strong>")
+        pos = m.end()
+    out.append(html.escape(text[pos:]))
+    return "".join(out)
 
 
 def notes_html(markdown):
@@ -43,11 +81,11 @@ def notes_html(markdown):
             if not in_list:
                 out.append("<ul>")
                 in_list = True
-            out.append(f"<li>{html.escape(text[2:])}</li>")
+            out.append(f"<li>{inline_html(text[2:])}</li>")
         elif text.startswith("#"):
-            out.append(f"<h3>{html.escape(text.lstrip('#').strip())}</h3>")
+            out.append(f"<h3>{inline_html(text.lstrip('#').strip())}</h3>")
         else:
-            out.append(f"<p>{html.escape(text)}</p>")
+            out.append(f"<p>{inline_html(text)}</p>")
     if in_list:
         out.append("</ul>")
     return "\n".join(out)
