@@ -44,7 +44,7 @@ How to write it:
 ### Fixed
 
 - **Security:** A client of the core's socket that floods it is now bounded, per client rather than per connection: an overlong line is refused (64 KiB before `hello`, 4 MiB for an AI agent), each kind of client has its own connections so that none can lock the app out, a connection that never says `hello` is closed after 10 s, and beyond 20 requests a second, or 2 deletions, moves or sends a second, a client other than the app gets a `rate_limited` error. The app is never limited.
-- **Security:** The core verifies the code signature of every client that connects to its socket: rights come from the signature, never from what a client declares, and a stranger is refused and logged. A release demands Developer ID clients of its own team, the hardened runtime, and no debugger entitlement.
+- **Security:** The core verifies the code signature of every client that connects to its socket, and the CLI, the MCP server and the app verify that the core is the one at the other end: rights come from the signature, never from what a client declares, and a stranger is refused and logged. A release demands Developer ID clients of its own team, the hardened runtime, and no debugger entitlement.
 - **Security:** A release app no longer obeys the variables of its UI tests (`NICEMAILER_UI_SCRIPT`…): another program could have launched it to play keys and clicks with the app's rights.
 - **Security:** A `data-dir` choice file that another account could have written (writable by others, not owned by you, a symbolic link) is ignored, and the core says why in its log. The app writes it private.
 - **Keyboard:** The main window could ignore every shortcut (`j`, `k`, `c`…) from launch, while the ⌘ shortcuts still worked.

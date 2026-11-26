@@ -144,6 +144,15 @@ final class CoreClient: @unchecked Sendable {
             close(sock)
             throw ConnectionError.socket(L("The core cannot be reached at %@. Start nicemailer-core.", socketPath))
         }
+        // The program at the other end must be NiceMailer's core, checked by
+        // its code signature before anything is sent (`CoreSignature`,
+        // `architecture.md`, section 9). A few milliseconds; nothing is
+        // checked in a debug build.
+        if let why = CoreSignature.refusal(fd: sock) {
+            close(sock)
+            CoreSignature.log.error("refused \(socketPath, privacy: .public): \(why, privacy: .public)")
+            throw ConnectionError.socket(L("The program at %@ is not NiceMailer's core: the app does not talk to it.", socketPath))
+        }
         // Stored properties are assigned only now: Swift forbids using `self`
         // (even in a closure) before every stored property is initialized,
         // which is why the socket is built in the local `sock` first.

@@ -1994,6 +1994,16 @@ impl Client {
         let path = data_dir.join(paths::SOCKET);
         let stream = UnixStream::connect(&path)
             .with_context(|| format!("cannot connect to {}: is the core running? (make core)", path.display()))?;
+        // The program at the other end must be our core, verified by its
+        // code signature before anything is sent: a password, a draft
+        // (`architecture.md`, section 9; `nm-signing`). A few milliseconds;
+        // nothing is checked in a development build.
+        {
+            use std::os::unix::io::AsRawFd;
+            let token = nm_signing::peer_audit_token(stream.as_raw_fd()).with_context(|| format!("{}: no audit token", path.display()))?;
+            nm_signing::verify_core(&token)
+                .map_err(|why| anyhow::anyhow!("{} is not served by NiceMailer's core ({why}): refused", path.display()))?;
+        }
         let reader = BufReader::new(stream.try_clone()?);
         let mut client = Client { stream, reader, next_id: 1 };
         client.call(method::HELLO, json!({"protocol_version": PROTOCOL_VERSION, "client": "cli"}))?;

@@ -317,6 +317,8 @@ La vérification s'exécute hors de la boucle qui accepte les connexions, dans l
 
 **Le `TEAM_ID` est celui du binaire lui-même**, lu à l'exécution dans sa propre signature (`SecCodeCopySelf`), jamais inscrit à la compilation : un build signé par n'importe quelle identité de l'équipe exige son équipe. Un build strict sans équipe (non signé, ad hoc) refuse tout pair (fail-closed).
 
+**Dans l'autre sens**, le CLI, le serveur MCP et l'app vérifient de la même façon que le programme qui sert le socket est le noyau (`identifier "eu.nicemailer.core"`) avant de lui envoyer quoi que ce soit : sans cela, un programme à l'écoute à la place du noyau recevrait un mot de passe ou un brouillon.
+
 Tous les binaires sont signés avec le *hardened runtime* (qui bloque l'injection par `DYLD_*`) et la validation des bibliothèques, pour qu'un binaire signé ne charge pas de code étranger. Pour la même raison, une app en release ignore les variables d'environnement de ses tests (`NICEMAILER_UI_SCRIPT`…) : sinon, n'importe quel programme lancerait l'app signée avec un script et jouerait des touches avec ses droits.
 
 En développement, les builds signés ad hoc ne satisfont pas l'exigence. La vérification est assouplie **à la compilation** — build debug, ou fonctionnalité Cargo `nm-signing/dev-unverified` pour les builds release de développement —, jamais par une variable d'environnement, qui deviendrait une porte dérobée en production. Un build assoupli ne vérifie rien, et le client déclare sa source dans `hello`.

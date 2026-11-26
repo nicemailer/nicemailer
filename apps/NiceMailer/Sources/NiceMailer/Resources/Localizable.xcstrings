@@ -96264,6 +96264,118 @@
         }
       }
     },
+    "The program at %@ is not NiceMailer's core: the app does not talk to it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le programme sur %@ n'est pas le noyau de NiceMailer : l'app ne lui parle pas."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Programm unter %@ ist nicht der Kern von NiceMailer: Die App spricht nicht mit ihm."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El programa en %@ no es el núcleo de NiceMailer: la app no se comunica con él."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il programma su %@ non è il nucleo di NiceMailer: l'app non comunica con esso."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O programa em %@ não é o núcleo do NiceMailer: o app não se comunica com ele."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O programa em %@ não é o núcleo do NiceMailer: a app não comunica com ele."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het programma op %@ is niet de kern van NiceMailer: de app praat er niet mee."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programmet på %@ är inte NiceMailers kärna: appen pratar inte med det."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programmet på %@ er ikke NiceMailers kerne: appen taler ikke med det."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programmet på %@ er ikke NiceMailers kjerne: appen snakker ikke med det."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ohjelma kohteessa %@ ei ole NiceMailerin ydin: sovellus ei keskustele sen kanssa."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Program pod %@ nie jest rdzeniem NiceMailera: aplikacja się z nim nie komunikuje."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Программа на %@ не является ядром NiceMailer: приложение с ней не связывается."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Програма на %@ не є ядром NiceMailer: застосунок із нею не зв'язується."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のプログラムは NiceMailer のコアではありません。アプリは通信しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 上的程序不是 NiceMailer 的核心：应用不会与其通信。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 上的程式不是 NiceMailer 的核心：App 不會與其通訊。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 프로그램은 NiceMailer의 코어가 아닙니다. 앱이 통신하지 않습니다."
+          }
+        }
+      }
+    },
     "The provider of %@ does not accept OAuth2 sign-in": {
       "localizations": {
         "fr": {

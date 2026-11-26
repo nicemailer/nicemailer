@@ -190,6 +190,12 @@ impl CoreLink {
         loop {
             match UnixStream::connect(&socket).await {
                 Ok(stream) => {
+                    // The program at the other end must be our core,
+                    // verified by its code signature before anything is
+                    // sent (`architecture.md`, section 9; `nm-signing`): a
+                    // stranger on the socket is refused at once, never
+                    // retried.
+                    verify_core(&stream).await?;
                     let conn = Conn::start(dir.clone(), stream);
                     match conn.call(method::HELLO, json!({"protocol_version": PROTOCOL_VERSION, "client": "mcp"})).await {
                         Ok(_) => return Ok(conn),
@@ -327,4 +333,19 @@ impl Conn {
             Err(_) => Err(CoreError::Lost),
         }
     }
+}
+
+/// Whether the program at the other end of `stream` is our core: its code
+/// signature, checked on tokio's blocking pool (a few milliseconds). Not a
+/// reason to try again: a stranger listening on the socket stays one.
+async fn verify_core(stream: &UnixStream) -> Result<(), CoreError> {
+    // Rust note: `AsRawFd` gives the socket's file descriptor, which the C
+    // call takes; the stream keeps owning it.
+    use std::os::unix::io::AsRawFd;
+    let token = nm_signing::peer_audit_token(stream.as_raw_fd())
+        .map_err(|e| CoreError::Unreachable(format!("the NiceMailer socket gives no audit token: {e}")))?;
+    let verdict = tokio::task::spawn_blocking(move || nm_signing::verify_core(&token))
+        .await
+        .map_err(|e| CoreError::Unreachable(format!("the check of the core failed: {e}")))?;
+    verdict.map_err(|why| CoreError::Unreachable(format!("the program on the NiceMailer socket is not NiceMailer's core ({why})")))
 }
