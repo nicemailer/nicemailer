@@ -104,29 +104,27 @@ echo "Building the app (release)…"
 BIN_DIR="$(cd "$PKG" && DEVELOPER_DIR="$XCODE" swift build -c release --show-bin-path)"
 
 # The core verifies the code signature of every client that connects to its
-# socket (architecture.md, section 9; crates/nm-daemon/src/signing.rs). A
-# release embeds the team id of the signing identity at build time and
-# demands an Apple-signed binary of that team with one of our identifiers;
-# a development bundle builds the core in debug, where the requirement is
-# relaxed at compile time (cfg(debug_assertions)) so that ad-hoc and
-# unsigned development binaries work.
-if [ "$RELEASE" = 1 ]; then
-  # find-identity prints e.g. `1) ABCDEF1234 "Developer ID Application: … (TEAMID1234)"`.
-  NICEMAILER_TEAM_ID="$(security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$IDENTITY\"" | sed -n 's/.*(\([A-Z0-9]\{10\}\))"[[:space:]]*$/\1/p' | head -1)"
-  if [ -z "$NICEMAILER_TEAM_ID" ]; then
-    echo "No team id in the signing identity \"$IDENTITY\": a release core would refuse every client. Sign with a certificate that has one." >&2
+# socket, and the CLI and the MCP server verify the core (architecture.md,
+# section 9; crates/nm-signing). Each reads the team from its own signature
+# at run time, so one release build serves both a release (Developer ID,
+# which then demands Developer ID peers) and a development bundle (Apple
+# Development, its own team). Only an ad-hoc bundle (no identity) has no
+# team: a strict core would refuse every client, so it is built with the
+# checks relaxed at compile time (feature nm-signing/dev-unverified), never
+# a release.
+FEATURES=
+if [ -z "$IDENTITY" ]; then
+  if [ "$RELEASE" = 1 ]; then
+    echo "A release needs a signing identity: none found." >&2
     exit 1
   fi
-  export NICEMAILER_TEAM_ID
-  PROFILE=--release
-  BIN_SUBDIR=release
-else
-  PROFILE=
-  BIN_SUBDIR=debug
+  echo "warning: no signing identity, ad-hoc bundle: its core checks no client signature" >&2
+  FEATURES="--features nm-signing/dev-unverified"
 fi
 
-echo "Building the core, the CLI and the MCP server ($BIN_SUBDIR)…"
-cargo build $PROFILE --quiet --manifest-path "$ROOT/Cargo.toml" --bin nicemailer-core --bin nicemailer --bin nicemailer-mcp
+echo "Building the core, the CLI and the MCP server (release)…"
+# shellcheck disable=SC2086 # $FEATURES is empty or two words.
+cargo build --release $FEATURES --quiet --manifest-path "$ROOT/Cargo.toml" --bin nicemailer-core --bin nicemailer --bin nicemailer-mcp
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -137,7 +135,7 @@ cp "$BIN_DIR/NiceMailer" "$APP/Contents/MacOS/NiceMailer"
 # rpath @executable_path/../Frameworks). ditto keeps the symbolic links of
 # the framework, which its signature covers.
 ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
-cp "$ROOT/target/$BIN_SUBDIR/nicemailer-core" "$ROOT/target/$BIN_SUBDIR/nicemailer" "$ROOT/target/$BIN_SUBDIR/nicemailer-mcp" "$APP/Contents/Helpers/"
+cp "$ROOT/target/release/nicemailer-core" "$ROOT/target/release/nicemailer" "$ROOT/target/release/nicemailer-mcp" "$APP/Contents/Helpers/"
 
 # The agent of the core (architecture.md, section 6): started at once when
 # the app registers it, at each session, and again after a crash; a stop

@@ -73,8 +73,11 @@ seed:
 # Apple Development certificate (scripts/sign-core.sh), so that every build
 # reads the passwords the previous ones saved in the Keychain
 # (docs/configuration.md, "Passwords").
+# The clients of `make core` (`make app`, the CLI of target/release) are not
+# signed: the core is built with the signature checks relaxed at compile time
+# (feature nm-signing/dev-unverified, crates/nm-signing). A bundle never is.
 core:
-	cargo build --release --bin nicemailer-core --bin nicemailer
+	cargo build --release --features nm-signing/dev-unverified --bin nicemailer-core --bin nicemailer
 	scripts/sign-core.sh target/release/nicemailer-core
 	target/release/nicemailer-core
 
@@ -115,7 +118,7 @@ imap-test:
 # NM_VOLUME mails (100,000 by default) synchronized from nothing; prints
 # the durations, the memory and the latency of the lists. Minutes long.
 volume-test:
-	cargo test --release -p nm-daemon --test volume_rpc -- --ignored --nocapture
+	cargo test --release --features nm-signing/dev-unverified -p nm-daemon --test volume_rpc -- --ignored --nocapture
 
 # Stops the test IMAP servers; their mail, kept in memory, is lost.
 imap-down:

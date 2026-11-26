@@ -43,9 +43,9 @@ How to write it:
 
 ### Fixed
 
-- **Security:** A client of the core's socket that floods it is now bounded: one overlong line is refused, a connection beyond the 64 open at once is closed at once, a connection that never says `hello` is closed after 10 s, and requests beyond 20 per second on one connection are refused with a `rate_limited` error instead of weighing on the core.
+- **Security:** A client of the core's socket that floods it is now bounded, per client rather than per connection: an overlong line is refused (64 KiB before `hello`, 4 MiB for an AI agent), each kind of client has its own connections so that none can lock the app out, a connection that never says `hello` is closed after 10 s, and beyond 20 requests a second, or 2 deletions, moves or sends a second, a client other than the app gets a `rate_limited` error. The app is never limited.
+- **Security:** The core verifies the code signature of every client that connects to its socket: rights come from the signature, never from what a client declares, and a stranger is refused and logged. A release demands Developer ID clients of its own team, the hardened runtime, and no debugger entitlement.
 - **Security:** A `data-dir` choice file that is readable or writable by anyone but its owner is now ignored (the core logs it and serves the default mailbox), so a forged file cannot point the core at another mailbox.
-- **Security:** The core now verifies the code signature of every client that connects to its socket (audit token + `SecCodeCheckValidity` against our team id and identifiers): a client's rights come from its signature, not from what it declares, and an unrecognized client is refused and logged. Development builds (debug) relax the check at compile time, as before.
 - **Keyboard:** The main window could ignore every shortcut (`j`, `k`, `c`…) from launch, while the ⌘ shortcuts still worked.
 - **Reading:** A mail without text (an empty body, a signature alone) says "no text" instead of "only quotes earlier messages".
 - **Status bar:** A menu opened from a block near the right edge of the window stays whole, a little to the left of its block, instead of being cut and shifting the columns of the list.

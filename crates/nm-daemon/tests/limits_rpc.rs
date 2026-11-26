@@ -88,8 +88,9 @@ fn a_hello_within_the_timeout_keeps_the_connection_open() {
     assert_eq!(c.call("ping", json!({})).unwrap(), json!("pong"));
 }
 
-/// The requests of one connection beyond its rate are refused with
-/// RATE_LIMITED (1019); the session's own methods are not limited.
+/// The requests of one source beyond its rate are refused with
+/// RATE_LIMITED (1019); `hello` counts against the session's budget, not
+/// this one.
 #[test]
 fn requests_beyond_the_rate_are_refused() {
     let dir = tempfile::tempdir().unwrap();
@@ -116,4 +117,112 @@ fn requests_beyond_the_rate_are_refused() {
     }
     assert_eq!(ok, 3, "the burst went through");
     assert_eq!(limited, 3, "the rest was refused");
+}
+
+/// The code of the error of `r`, or 0 for a success.
+fn code(r: &Result<serde_json::Value, serde_json::Value>) -> i64 {
+    match r {
+        Ok(_) => 0,
+        Err(e) => e["code"].as_i64().unwrap_or(-1),
+    }
+}
+
+/// The rate is the source's, not the connection's: a second connection of
+/// the same client has nothing left; another source has its own budget,
+/// and the app is never limited (`limits.rs`).
+#[test]
+fn the_rate_is_shared_by_the_connections_of_a_source_and_spares_the_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_RATE_BURST", "2"), ("NICEMAILER_TEST_RATE_PER_SEC", "0")]);
+    let mut first = Client::connect_as(dir.path(), "cli");
+    let mut second = Client::connect_as(dir.path(), "cli");
+    assert_eq!(code(&first.call("list_folders", json!({}))), 0);
+    assert_eq!(code(&second.call("list_folders", json!({}))), 0);
+    assert_eq!(code(&second.call("list_folders", json!({}))), 1019, "the second connection shares the budget");
+    assert_eq!(code(&first.call("list_folders", json!({}))), 1019);
+    let mut agent = Client::connect_as(dir.path(), "mcp");
+    assert_eq!(code(&agent.call("list_folders", json!({}))), 0, "another source, another budget");
+    let mut app = Client::connect_as(dir.path(), "app");
+    for _ in 0..20 {
+        assert_eq!(code(&app.call("list_folders", json!({}))), 0, "the app is never limited");
+    }
+}
+
+/// Deletions, moves and sends have a smaller budget of their own, on top
+/// of the general one (`architecture.md`, section 9).
+#[test]
+fn deletions_have_a_budget_of_their_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_DESTRUCTIVE_BURST", "2"), ("NICEMAILER_TEST_DESTRUCTIVE_PER_SEC", "0")]);
+    let mut c = Client::connect(dir.path());
+    // The tag does not exist: the handler refuses it, but the request was
+    // counted all the same.
+    for _ in 0..2 {
+        assert_ne!(code(&c.call("delete_tag", json!({"name": "nope"}))), 1019);
+    }
+    assert_eq!(code(&c.call("delete_tag", json!({"name": "nope"}))), 1019);
+    // Reads go on.
+    assert_eq!(code(&c.call("list_folders", json!({}))), 0);
+    // The app deletes freely.
+    let mut app = Client::connect_as(dir.path(), "app");
+    assert_ne!(code(&app.call("delete_tag", json!({"name": "nope"}))), 1019);
+}
+
+/// `ping`, `hello` and the like have a budget per connection: a flood of
+/// them is refused too.
+#[test]
+fn a_flood_of_pings_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_SESSION_BURST", "3"), ("NICEMAILER_TEST_SESSION_PER_SEC", "0")]);
+    // `hello` takes one of the three.
+    let mut c = Client::connect(dir.path());
+    assert_eq!(code(&c.call("ping", json!({}))), 0);
+    assert_eq!(code(&c.call("ping", json!({}))), 0);
+    assert_eq!(code(&c.call("ping", json!({}))), 1019);
+    // The app has no such budget.
+    let mut app = Client::connect_as(dir.path(), "app");
+    for _ in 0..10 {
+        assert_eq!(code(&app.call("ping", json!({}))), 0);
+    }
+}
+
+/// Invalid JSON beyond the session's budget closes the connection: a
+/// correct client never sends it.
+#[test]
+fn a_flood_of_invalid_json_closes_the_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[("NICEMAILER_TEST_SESSION_BURST", "3"), ("NICEMAILER_TEST_SESSION_PER_SEC", "0")]);
+    let mut c = Client::connect(dir.path());
+    for _ in 0..3 {
+        c.send_line("{not json");
+    }
+    let mut answers = 0;
+    while let Some(line) = c.try_line() {
+        assert_eq!(line["error"]["code"], json!(-32700), "{line}");
+        answers += 1;
+    }
+    assert!((2..=3).contains(&answers), "{answers} answers before the close");
+}
+
+/// Before `hello`, a line is small (64 KiB), whatever the limit after it.
+#[test]
+fn a_long_line_before_hello_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let _core = start_with(dir.path(), &[]);
+    let s = Client::socket(dir.path());
+    s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    // Written from a thread: the core stops reading at the limit, and a
+    // write of the whole line would wait for it forever.
+    let mut w = s.try_clone().unwrap();
+    let writer = std::thread::spawn(move || {
+        let _ = w.write_all(&vec![b' '; 100 << 10]);
+        let _ = w.write_all(b"\n");
+    });
+    let mut reader = std::io::BufReader::new(s);
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut reader, &mut line).unwrap();
+    let answer: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(answer["error"]["code"], json!(-32600), "{answer}");
+    assert!(answer["error"]["message"].as_str().unwrap().contains(&(64 << 10).to_string()), "{answer}");
+    let _ = writer.join();
 }

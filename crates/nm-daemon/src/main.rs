@@ -44,6 +44,7 @@ mod ai;
 mod drafts;
 mod events;
 mod extract;
+mod limits;
 mod rights;
 mod setup;
 mod signing;
@@ -183,21 +184,15 @@ struct Core {
     events: Mutex<EventLog>,
     /// `events.client_queue`: lines a client may have waiting.
     client_queue: usize,
-    /// The longest line read from a client (`MAX_LINE`; the tests override
-    /// it with `NICEMAILER_TEST_MAX_LINE_BYTES`).
-    max_line: usize,
-    /// Permits for the connections served at once (`MAX_CONNECTIONS`); one
-    /// is held for the whole life of a connection.
-    conn_slots: Arc<Semaphore>,
-    /// How long a connection may take to send its `hello`
-    /// (`HANDSHAKE_TIMEOUT`; the tests override it with
-    /// `NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS`).
-    handshake_timeout: Duration,
-    /// The rate limit of one connection (`RATE_BURST`, `RATE_PER_SEC`; the
-    /// tests override them with `NICEMAILER_TEST_RATE_BURST` and
-    /// `NICEMAILER_TEST_RATE_PER_SEC`).
-    rate_burst: f64,
-    rate_per_sec: f64,
+    /// The limits of the socket (`limits.rs`): line lengths, handshake
+    /// delay, rates.
+    limits: limits::Limits,
+    /// The places of connection, per source (`limits.rs`).
+    slots: limits::Slots,
+    /// The rate limits of each source, shared by its connections.
+    rates: limits::SourceRates,
+    /// The log of the refused connections, at most a line a second.
+    refusals: limits::LogThrottle,
     /// Immutable raw message files (`stockage-brut.md`).
     raw: RawStore,
     /// Attachments extracted from them on demand (`attachments.rs`).
@@ -290,12 +285,21 @@ async fn main() -> anyhow::Result<()> {
 /// The core itself, once it holds its directory: settings, database,
 /// socket, then the clients until it is asked to stop.
 async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
-    // A release core built without the team id refuses every client
-    // (fail-closed, `signing.rs`); say it once, loudly.
-    #[cfg(not(debug_assertions))]
-    if signing::TEAM_ID.is_empty() {
-        eprintln!("NICEMAILER_TEAM_ID absent à la compilation : toute connexion sera refusée (fail-closed)");
-    }
+    // What this core demands of its clients, from its own signature
+    // (`nm-signing`): said once, so that a core that refuses everyone
+    // (strict build without a team: fail-closed) is understood at once.
+    // On the blocking pool, off the path of the start: reading our own
+    // signature also warms up the Security framework, whose first check
+    // takes about a second, so that the first client does not wait for it.
+    tokio::task::spawn_blocking(|| match nm_signing::policy() {
+        nm_signing::Policy::Relaxed => eprintln!("signature des clients : non vérifiée (build de développement)"),
+        nm_signing::Policy::Strict { team, developer_id } => {
+            eprintln!("signature des clients : équipe {team}{}", if *developer_id { ", Developer ID" } else { "" })
+        }
+        nm_signing::Policy::NoTeam => {
+            eprintln!("signature des clients : ce noyau n'a pas d'équipe (non signé ou ad hoc), toute connexion sera refusée (fail-closed)")
+        }
+    });
     let data_dir = data_dir.to_path_buf();
     let db_path = data_dir.join(nm_api::paths::DATABASE);
     // How long each step before the socket takes: until the socket is
@@ -378,6 +382,8 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
     }
     // `Arc` so that every connection task can hold a pointer to the shared
     // state.
+    // The limits of the socket, read once (`limits.rs`).
+    let limits = limits::Limits::from_env();
     let core = Arc::new(Core {
         store: Mutex::new(store),
         readers,
@@ -392,17 +398,10 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         themes: Mutex::new(themes),
         events: Mutex::new(events),
         client_queue: settings.client_queue as usize,
-        max_line: std::env::var("NICEMAILER_TEST_MAX_LINE_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_LINE),
-        conn_slots: Arc::new(Semaphore::new(
-            std::env::var("NICEMAILER_TEST_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_CONNECTIONS),
-        )),
-        handshake_timeout: std::env::var("NICEMAILER_TEST_HANDSHAKE_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(HANDSHAKE_TIMEOUT),
-        rate_burst: std::env::var("NICEMAILER_TEST_RATE_BURST").ok().and_then(|v| v.parse().ok()).unwrap_or(RATE_BURST),
-        rate_per_sec: std::env::var("NICEMAILER_TEST_RATE_PER_SEC").ok().and_then(|v| v.parse().ok()).unwrap_or(RATE_PER_SEC),
+        limits: limits.clone(),
+        slots: limits::Slots::new(&limits),
+        rates: limits::SourceRates::new(&limits),
+        refusals: limits::LogThrottle::new(),
         raw,
         attachments,
         outgoing,
@@ -529,32 +528,54 @@ async fn run(args: Args, data_dir: &Path) -> anyhow::Result<()> {
         // the first one that completes.
         tokio::select! {
             accepted = listener.accept() => {
-                let (stream, _) = accepted?;
-                // Who the client is comes from its code signature, never from
-                // what it will declare in `hello` (`architecture.md`,
-                // section 9; `signing.rs`). A debug build admits unsigned
-                // development binaries and lets `hello` declare the source.
-                let verified = match signing::admit(&stream) {
-                    signing::Admission::Verified(source) => Some(source),
-                    signing::Admission::DevUnverified => None,
-                    signing::Admission::Refused => {
-                        eprintln!("{} connexion refusée : signature du client non reconnue", local_time());
+                // A failed accept (out of file descriptors, a client gone
+                // before its accept) is logged, never a reason to stop.
+                let stream = match accepted {
+                    Ok((stream, _)) => stream,
+                    Err(e) => {
+                        limits::accept_failed(&e).await;
                         continue;
                     }
                 };
-                // Beyond MAX_CONNECTIONS, the connection is closed at once:
-                // the stream is dropped, the client sees a closed socket.
-                let Ok(permit) = core.conn_slots.clone().try_acquire_owned() else {
-                    eprintln!("{} connexion refusée : toutes les places de connexion sont prises", local_time());
+                // The deadline of the handshake, from the accept: the check
+                // of the signature and the `hello` must both fit in it.
+                let deadline = tokio::time::Instant::now() + core.limits.handshake_timeout;
+                // Too many signatures being checked: closed at once (the
+                // stream is dropped, the client sees a closed socket).
+                let Some(pending) = core.slots.pending() else {
+                    core.refusals.log(|| format!("{} connexion refusée : trop de connexions en cours de vérification", local_time()));
                     continue;
                 };
                 let core = core.clone();
                 // `tokio::spawn` starts an independent task; `async move`
                 // moves `core` and `stream` into it, so the task owns them.
+                // The check runs there, not in this loop, which goes back
+                // to accepting at once.
                 tokio::spawn(async move {
-                    // The slot is freed when the connection ends.
-                    let _permit = permit;
-                    if let Err(e) = serve(core, stream, verified).await {
+                    // Who the client is comes from its code signature, never
+                    // from what it will declare in `hello` (`architecture.md`,
+                    // section 9; `signing.rs`).
+                    let admission = tokio::time::timeout_at(deadline, signing::admit(&stream)).await;
+                    drop(pending);
+                    let verified = match admission {
+                        Ok(signing::Admission::Verified(source)) => Some(source),
+                        Ok(signing::Admission::DevUnverified) => None,
+                        Ok(signing::Admission::Refused(why)) => {
+                            core.refusals.log(|| format!("{} connexion refusée : {why}", local_time()));
+                            return;
+                        }
+                        Err(_) => {
+                            core.refusals.log(|| format!("{} connexion refusée : signature non vérifiée à temps", local_time()));
+                            return;
+                        }
+                    };
+                    // Each source has its places (`limits.rs`): beyond, the
+                    // connection is closed at once.
+                    let Some(_slot) = core.slots.admit(verified) else {
+                        core.refusals.log(|| format!("{} connexion refusée : toutes les places de {verified:?} sont prises", local_time()));
+                        return;
+                    };
+                    if let Err(e) = serve(core, stream, verified, deadline).await {
                         eprintln!("connexion fermée : {e}");
                     }
                 });
@@ -684,15 +705,26 @@ async fn open_store(
             });
         })
     });
+    let refusing = limits::refusing_slots();
     let result = loop {
         tokio::select! {
             // Rust note: `&mut opening` polls the future without moving it,
             // so the loop can wait on it again after a client.
             r = &mut opening => break r.map_err(|e| anyhow::anyhow!("ouverture interrompue : {e}"))?,
-            accepted = listener.accept() => {
-                let (stream, _) = accepted?;
-                tokio::spawn(update::serve_refusing(stream, maintenance.subscribe()));
-            }
+            accepted = listener.accept() => match accepted {
+                // Each client is only told the maintenance; their number is
+                // bounded all the same (`limits.rs`).
+                Ok((stream, _)) => {
+                    if let Ok(slot) = refusing.clone().try_acquire_owned() {
+                        let state = maintenance.subscribe();
+                        tokio::spawn(async move {
+                            let _slot = slot;
+                            update::serve_refusing(stream, state).await;
+                        });
+                    }
+                }
+                Err(e) => limits::accept_failed(&e).await,
+            },
             _ = sigterm.recv() => stopped_while_opening(),
             _ = tokio::signal::ctrl_c() => stopped_while_opening(),
         }
@@ -734,13 +766,21 @@ async fn serve_maintenance_until_stopped(
     maintenance: &update::State,
     sigterm: &mut tokio::signal::unix::Signal,
 ) -> ! {
+    let refusing = limits::refusing_slots();
     loop {
         tokio::select! {
-            accepted = listener.accept() => {
-                if let Ok((stream, _)) = accepted {
-                    tokio::spawn(update::serve_refusing(stream, maintenance.subscribe()));
+            accepted = listener.accept() => match accepted {
+                Ok((stream, _)) => {
+                    if let Ok(slot) = refusing.clone().try_acquire_owned() {
+                        let state = maintenance.subscribe();
+                        tokio::spawn(async move {
+                            let _slot = slot;
+                            update::serve_refusing(stream, state).await;
+                        });
+                    }
                 }
-            }
+                Err(e) => limits::accept_failed(&e).await,
+            },
             _ = sigterm.recv() => break,
             _ = tokio::signal::ctrl_c() => break,
         }
@@ -886,63 +926,6 @@ impl Drop for StoreLock<'_> {
 /// socket gets slower, it cannot make the core's memory grow.
 const IN_FLIGHT: usize = 64;
 
-/// The longest line read from a client, in bytes (`architecture.md`,
-/// section 9): a request carries text — a draft's body is the biggest of
-/// them — never a file, an attachment travels by its path, read by the core
-/// at once (`architecture.md`, section 6). 16 MiB leaves room for a very
-/// long body, and bounds what one line can make the core allocate.
-pub(crate) const MAX_LINE: usize = 16 << 20;
-
-/// Simultaneous connections the core serves. Beyond, the new connection is
-/// closed at once: without a cap, one process could exhaust the core's file
-/// descriptors by opening connections it never uses (`architecture.md`,
-/// section 9).
-const MAX_CONNECTIONS: usize = 64;
-
-/// How long a connection may take to send its `hello`: the handshake is the
-/// first thing a client does, and a connection that never does it holds a
-/// task and a file descriptor for nothing (`architecture.md`, section 9).
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// The requests of one connection may burst up to this many at once: the
-/// app's single connection reloads its lists in bursts during an import,
-/// which the burst absorbs (`architecture.md`, section 9, "limite de
-/// débit").
-const RATE_BURST: f64 = 100.0;
-
-/// Then this many requests per second, on average; beyond, the request is
-/// refused with `RATE_LIMITED`.
-const RATE_PER_SEC: f64 = 20.0;
-
-/// The rate limit of one connection: a token bucket — `burst` requests may
-/// go at once, then `per_sec` per second on average. A pure function of
-/// the instants, tested alone below.
-struct RateLimit {
-    burst: f64,
-    per_sec: f64,
-    tokens: f64,
-    last: Instant,
-}
-
-impl RateLimit {
-    fn new(burst: f64, per_sec: f64) -> RateLimit {
-        RateLimit { burst, per_sec, tokens: burst, last: Instant::now() }
-    }
-
-    /// Whether a request may go at `now`, taking one token if so.
-    fn allow(&mut self, now: Instant) -> bool {
-        let elapsed = now.saturating_duration_since(self.last);
-        self.tokens = (self.tokens + elapsed.as_secs_f64() * self.per_sec).min(self.burst);
-        self.last = now;
-        if self.tokens >= 1.0 {
-            self.tokens -= 1.0;
-            true
-        } else {
-            false
-        }
-    }
-}
-
 /// Whether a method only reads, and so may run alongside the other
 /// requests of its connection.
 ///
@@ -1008,7 +991,7 @@ enum Read {
 /// So responses may come back in another order than the requests: the
 /// client matches them by `id`, as JSON-RPC allows. A client that needs a
 /// read to see a write waits for the write's response before sending it.
-async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>) -> anyhow::Result<()> {
+async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>, deadline: tokio::time::Instant) -> anyhow::Result<()> {
     // Split the socket into a reading half and a writing half, so that they
     // can be used by different tasks.
     let (read, mut write) = stream.into_split();
@@ -1055,26 +1038,29 @@ async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>) ->
     // A maintenance that begins closes the connection (`update.rs`).
     let mut maintenance = core.maintenance.subscribe();
     let mut closed_for = None;
-    // The deadline of the handshake, fixed from the accept: a connection
-    // that never sends its `hello` is closed (`HANDSHAKE_TIMEOUT`).
-    let handshake = tokio::time::sleep(core.handshake_timeout);
+    // The deadline of the handshake, fixed at the accept: a connection
+    // that never sends its `hello` is closed (`limits.rs`).
+    let handshake = tokio::time::sleep_until(deadline);
     tokio::pin!(handshake);
-    // The rate limit of this connection; the session's own methods are not
-    // limited (they change nothing), everything else is.
-    let mut rate = RateLimit::new(core.rate_burst, core.rate_per_sec);
+    // What this connection sends outside the contract's methods (`ping`,
+    // `hello`, `subscribe`, anything before `hello`, invalid JSON) has a
+    // budget of its own; the contract's methods count against the budget
+    // of the source, shared by its connections (`limits.rs`). The app has
+    // neither.
+    let mut session_rate = limits::RateLimit::new(core.limits.session);
     loop {
         // `read_line` returns `Ok(None)` when the client closes the
         // connection. No `await` inside the `select!` branches: the
         // `watch::Ref` of the maintenance branch is not `Send`, and an
         // `await` there would make the whole connection task not `Send`.
         let read = tokio::select! {
-            r = read_line(&mut reader, core.max_line) => match r {
+            r = read_line(&mut reader, core.limits.line_limit(session.hello, session.source)) => match r {
                 Ok(Some(line)) => Read::Line(line),
                 Ok(None) => Read::Eof,
                 Err(e) => Read::Failed(e),
             },
             _ = &mut handshake, if !session.hello => {
-                eprintln!("{} connexion fermée : pas de hello dans les {:?}", local_time(), core.handshake_timeout);
+                core.refusals.log(|| format!("{} connexion fermée : pas de hello dans les {:?}", local_time(), core.limits.handshake_timeout));
                 break;
             },
             // Rust note: `wait_for` returns at once if the value already
@@ -1109,12 +1095,25 @@ async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>) ->
             // answer with `id: null`.
             Err(e) => {
                 let r = Response::err(Value::Null, RpcError::new(error_code::PARSE_ERROR, reason::PARSE_ERROR.with("detail", e.to_string())));
-                if respond(&out, Some(r)).await.is_err() {
+                // A correct client never sends invalid JSON: beyond the
+                // budget of the session, the connection is closed.
+                let flood = session.source != Source::App && !session_rate.allow(Instant::now());
+                if respond(&out, Some(r)).await.is_err() || flood {
                     break;
                 }
                 continue;
             }
         };
+        // The connection's own requests, and anything before `hello`: the
+        // budget of the session (`limits.rs`).
+        let own = !session.hello || matches!(req.method.as_str(), method::PING | method::HELLO | method::SUBSCRIBE);
+        if own && session.source != Source::App && !session_rate.allow(Instant::now()) {
+            let r = req.id.map(|id| Response::err(id, RpcError::new(error_code::RATE_LIMITED, reason::RATE_LIMITED)));
+            if respond(&out, r).await.is_err() {
+                break;
+            }
+            continue;
+        }
         if let Some(result) = session_call(&core, &mut session, &req) {
             // A client let in by no maintenance: told so, then closed.
             let refused = req.method == method::HELLO && matches!(&result, Err(e) if e.code == error_code::MAINTENANCE);
@@ -1123,9 +1122,10 @@ async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>) ->
             }
             continue;
         }
-        // Beyond its rate, the connection's requests are refused, not
-        // queued: a client that floods gets an answer, not a wait.
-        if !rate.allow(Instant::now()) {
+        // Beyond the rate of its source, a request is refused, not queued:
+        // a client that floods gets an answer, not a wait. The app is never
+        // limited (`limits.rs`).
+        if !core.rates.allow(session.source, &req.method, Instant::now()) {
             let r = req.id.map(|id| Response::err(id, RpcError::new(error_code::RATE_LIMITED, reason::RATE_LIMITED)));
             if respond(&out, r).await.is_err() {
                 break;
@@ -2748,23 +2748,6 @@ mod tests {
         drop(l);
         assert!(path.exists(), "dropping the listener leaves the file");
         assert!(bind(&path).is_ok());
-    }
-
-    /// The token bucket lets the burst through, refuses beyond it, and
-    /// refills with time, never holding more than the burst.
-    #[test]
-    fn rate_limit_lets_the_burst_through_then_refills() {
-        let start = Instant::now();
-        let mut r = RateLimit::new(3.0, 10.0);
-        assert!(r.allow(start) && r.allow(start) && r.allow(start), "the burst goes at once");
-        assert!(!r.allow(start), "the burst is spent");
-        assert!(!r.allow(start + Duration::from_millis(50)), "half a token is not a token");
-        assert!(r.allow(start + Duration::from_millis(100)), "one token refilled in 100 ms at 10/s");
-        assert!(!r.allow(start + Duration::from_millis(100)));
-        // After a long idle, the bucket is full again, but not more.
-        let later = start + Duration::from_secs(3600);
-        assert!(r.allow(later) && r.allow(later) && r.allow(later));
-        assert!(!r.allow(later), "capped at the burst");
     }
 
     /// The line of the start: the total, then each step in its order.

@@ -107,8 +107,9 @@ pub fn refusal(state: &State) -> Option<RpcError> {
 pub async fn serve_refusing(stream: UnixStream, state: watch::Receiver<Option<Maintenance>>) {
     let (read, mut write) = stream.into_split();
     let mut reader = BufReader::new(read);
-    // Same line limit as a serving connection (`main.rs`, `read_line`).
-    let id = match tokio::time::timeout(FIRST_LINE, crate::read_line(&mut reader, crate::MAX_LINE)).await {
+    // The line limit of a connection before its `hello` (`limits.rs`):
+    // a maintenance only reads the id of the first request.
+    let id = match tokio::time::timeout(FIRST_LINE, crate::read_line(&mut reader, crate::limits::PRE_HELLO_LINE)).await {
         Ok(Ok(Some(line))) => serde_json::from_str::<Request>(&line).ok().and_then(|r| r.id).unwrap_or(Value::Null),
         // Nothing sent in time, a line too long, or the client left: the
         // error alone.

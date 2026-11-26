@@ -304,16 +304,24 @@ Un processus de l'utilisateur qui peut se connecter au socket peut aussi lire di
 2. obtient la signature du processus par `SecCodeCopyGuestWithAttributes` (attribut `kSecGuestAttributeAudit`) et la valide par `SecCodeCheckValidity` contre l'exigence :
    ```
    anchor apple generic and certificate leaf[subject.OU] = "<TEAM_ID>"
-     and identifier in ("eu.nicemailer.NiceMailer", "eu.nicemailer.cli", "eu.nicemailer.tui",
-                        "eu.nicemailer.mcp", "eu.nicemailer.web")
+     and (identifier "eu.nicemailer.NiceMailer" or identifier "eu.nicemailer.cli" or identifier "eu.nicemailer.tui"
+          or identifier "eu.nicemailer.mcp" or identifier "eu.nicemailer.web")
+     and !(entitlement["com.apple.security.get-task-allow"] exists)
    ```
-3. ferme la connexion si la vérification échoue, et l'inscrit au journal.
+   Le langage des exigences n'a pas de `identifier in (…)` : une liste s'écrit par `or`, une négation par `!`. Le *hardened runtime* du client, qu'une exigence ne sait pas exprimer, est vérifié à part (drapeau `CS_RUNTIME` de son code directory). Un build signé Developer ID exige en plus les marqueurs Developer ID (`certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13]`) : une release refuse les builds de développement de la même équipe ;
+3. ferme la connexion si la vérification échoue, et l'inscrit au journal (une ligne par seconde au plus).
+
+La vérification s'exécute hors de la boucle qui accepte les connexions, dans le délai de la poignée de main.
 
 **L'identité du client est celle de sa signature**, jamais ce qu'il annonce dans la poignée de main. Chaque binaire a un identifiant de signature distinct, qui détermine ses droits.
 
+**Le `TEAM_ID` est celui du binaire lui-même**, lu à l'exécution dans sa propre signature (`SecCodeCopySelf`), jamais inscrit à la compilation : un build signé par n'importe quelle identité de l'équipe exige son équipe. Un build strict sans équipe (non signé, ad hoc) refuse tout pair (fail-closed).
+
 Tous les binaires sont signés avec le *hardened runtime* (qui bloque l'injection par `DYLD_*`) et la validation des bibliothèques, pour qu'un binaire signé ne charge pas de code étranger.
 
-En développement, les builds signés ad hoc ne satisfont pas l'exigence. Une exigence assouplie est activée **à la compilation** (`cfg(debug_assertions)`), jamais par une variable d'environnement, qui deviendrait une porte dérobée en production.
+En développement, les builds signés ad hoc ne satisfont pas l'exigence. La vérification est assouplie **à la compilation** — build debug, ou fonctionnalité Cargo `nm-signing/dev-unverified` pour les builds release de développement —, jamais par une variable d'environnement, qui deviendrait une porte dérobée en production. Un build assoupli ne vérifie rien, et le client déclare sa source dans `hello`.
+
+**Risque assumé** : une version plus ancienne d'un de nos binaires, signée par la même équipe, satisfait l'exigence.
 
 ### Droits par client
 
@@ -357,7 +365,8 @@ Un mail entrant est un contenu hostile, lu par un LLM qui dispose d'outils. Sans
 ### Journal et limites
 
 - Les actions de tous les clients, app comprise, sont journalisées dans `audit_log` et consultables dans l'app : source, action, entité concernée, date (`tracabilite.md`).
-- Les suppressions et les demandes d'envoi des clients autres que l'app sont soumises à une limite de débit.
+- Les suppressions, déplacements et demandes d'envoi des clients autres que l'app sont soumis à une limite de débit propre, en plus d'une limite générale des requêtes. Les deux sont comptées par source vérifiée, toutes ses connexions ensemble ; l'app n'est jamais limitée.
+- Chaque source a ses places de connexion : aucun client ne peut prendre celles de l'app. Une ligne est bornée (64 Kio avant `hello`, 4 Mio pour un agent ou le serveur web, 16 Mio pour l'app, le CLI et la TUI), et une connexion qui ne s'est pas présentée en 10 s est fermée.
 
 ---
 

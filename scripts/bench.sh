@@ -21,7 +21,9 @@ CLI=$ROOT/target/release/nicemailer
 CORE=$ROOT/target/release/nicemailer-core
 THREADS=${THREADS:-100000}
 
-cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml"
+# Unsigned development binaries: the signature checks are relaxed at
+# compile time (crates/nm-signing, feature dev-unverified).
+cargo build --release --features nm-signing/dev-unverified --quiet --manifest-path "$ROOT/Cargo.toml"
 
 # A short path: a Unix socket path is limited to about 100 characters.
 if [[ -n ${BENCH_DATA_DIR:-} ]]; then

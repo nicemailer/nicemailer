@@ -14,7 +14,9 @@ APP="$ROOT/apps/NiceMailer"
 XCODE=${XCODE:-/Applications/Xcode.app/Contents/Developer}
 OUT="$APP/.build/ui-test"
 
-cargo build --release --quiet --manifest-path "$ROOT/Cargo.toml"
+# Unsigned development binaries: the signature checks are relaxed at
+# compile time (crates/nm-signing, feature dev-unverified).
+cargo build --release --features nm-signing/dev-unverified --quiet --manifest-path "$ROOT/Cargo.toml"
 (cd "$APP" && DEVELOPER_DIR="$XCODE" swift build --quiet)
 
 CLI="$ROOT/target/release/nicemailer"
