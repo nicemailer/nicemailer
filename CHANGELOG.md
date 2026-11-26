@@ -14,13 +14,15 @@ How to write it:
 
 ## Unreleased
 
-NiceMailer gets themes: four built-in looks, from the keyboard-first geek to regular, a Mac window as in Mail, with a three-line list and buttons for the actions of a mail and of a reply. Microsoft 365 and Outlook.com accounts sign in through the browser, and the core and its clients now verify each other.
+## 0.3.0 — 2026-11-26
 
-After updating, save the password of each account once more (Settings…, Accounts): passwords saved by an earlier version can no longer be read.
+NiceMailer now supports themes, with four built in: Clean (the default), Regular (a Mac-style window with a toolbar, like Mail), Geek (for IDE lovers), and Minimal (Clean with a monospaced font, showing emails as plain text).
+
+We've also added a three-line message list, along with action buttons for emails and replies. Microsoft 365 and Outlook.com accounts now sign in through the browser, and the core and its clients now verify each other.
 
 ### Added
 
-- **Themes:** Four built-in themes: clean (the default), geek, regular (a Mac window with a toolbar, as in Mail) and minimal (clean in a monospaced font, mails as text). Choose one with `v` `t` (Show, theme…) or `ui.theme` in `config.toml`; each is a file of `~/.config/nicemailer/themes/` you can change, and `nicemailer theme new` starts your own (docs/themes.md).
+- **Themes:** Four built-in themes: clean (the default), regular (a Mac window with a toolbar, as in Mail), geek for IDE lovers and minimal (clean in a monospaced font, mails as text). Choose one with `v` `t` (Show, theme…) or `ui.theme` in `config.toml`; each is a file of `~/.config/nicemailer/themes/` you can change, and `nicemailer theme new` starts your own (docs/themes.md).
 - **Themes:** After an update from NiceMailer 0.2 or earlier, the app keeps geek, the look it had: `ui.theme = "geek"` is written in `config.toml`, to remove or change.
 - **Themes:** A theme also decides whether mails open in HTML or in text, how attachments are listed, the width of the text column, the buttons of the mail's title line and whether the window buttons sit in the status bar.
 - **List:** Show the list on three lines per mail, as in Mail: sender and date, subject, the beginning of the mail. `v` `l` switches between one and three lines; the app remembers the choice and the list width of each.

@@ -1430,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "nm-ai"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "libc",
  "nm-api",
@@ -1445,7 +1445,7 @@ dependencies = [
 
 [[package]]
 name = "nm-api"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "libc",
  "nm-core",
@@ -1456,7 +1456,7 @@ dependencies = [
 
 [[package]]
 name = "nm-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1473,7 +1473,7 @@ dependencies = [
 
 [[package]]
 name = "nm-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1482,7 +1482,7 @@ dependencies = [
 
 [[package]]
 name = "nm-daemon"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1508,7 +1508,7 @@ dependencies = [
 
 [[package]]
 name = "nm-engine"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "core-foundation 0.10.1",
  "libc",
@@ -1530,7 +1530,7 @@ dependencies = [
 
 [[package]]
 name = "nm-mcp"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1547,7 +1547,7 @@ dependencies = [
 
 [[package]]
 name = "nm-proto"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "hickory-resolver",
  "imap-codec",
@@ -1564,7 +1564,7 @@ dependencies = [
 
 [[package]]
 name = "nm-signing"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "core-foundation 0.10.1",
  "libc",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "nm-store"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "ammonia",
  "cssparser",
