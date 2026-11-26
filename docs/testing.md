@@ -3,7 +3,7 @@
 | Command | What runs | Needs |
 | --- | --- | --- |
 | `make dev-cert` | Fallback only: a self-signed certificate for `make core` when there is no Apple Development one; its passwords survive no rebuild (`configuration.md`, "Passwords") | |
-| `make test` | the editor built and its tests (`make editor-test`), Rust tests (`cargo test`), Python script tests and Swift unit tests (`swift test`) | Node, nothing running |
+| `make test` | the editor built and its tests (`make editor-test`), Rust tests (`cargo test`, then `nm-signing` again in release, as a strict build), Python script tests and Swift unit tests (`swift test`) | Node, nothing running |
 | `make editor-test` | the editor of a mail's text: type check and Vitest ([editor.md](editor.md)) | Node |
 | `make swift-test` | Swift unit tests only | |
 | `make ui-test` | scripted UI tests of the app | builds the core; starts its own cores on temporary data |

@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 nm-api.workspace = true
 nm-core.workspace = true
+nm-signing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "io-std", "fs"] }

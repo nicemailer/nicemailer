@@ -1,0 +1,20 @@
+[package]
+name = "nm-signing"
+description = "Code-signature checks of the peer of a Unix socket: the core verifies its clients, the clients verify the core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Relaxes the requirement *at compile time* for development builds made with
+# `--release` (`make core`, `make ui-test`, `make bench`), whose clients are
+# unsigned: never an environment variable, which would be a back door in
+# production (`architecture.md`, section 9). A debug build is always relaxed.
+# `make bundle --release` never enables it.
+dev-unverified = []
+
+[dependencies]
+libc.workspace = true
+security-framework.workspace = true
+core-foundation.workspace = true

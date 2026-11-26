@@ -35,6 +35,9 @@ build: editor
 # Swift unit tests.
 test: editor editor-test
 	cargo test
+	# The signature checks again as a strict (release) build compiles them:
+	# fail-closed without a team, an unsigned peer refused (crates/nm-signing).
+	cargo test --release -q -p nm-signing
 	python3 -m unittest discover -s scripts/tests
 	cd apps/NiceMailer && DEVELOPER_DIR=$(XCODE) swift test
 

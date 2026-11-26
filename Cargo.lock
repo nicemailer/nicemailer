@@ -1465,6 +1465,7 @@ dependencies = [
  "nm-api",
  "nm-core",
  "nm-engine",
+ "nm-signing",
  "nm-store",
  "serde_json",
  "tempfile",
@@ -1492,6 +1493,7 @@ dependencies = [
  "nm-engine",
  "nm-mcp",
  "nm-proto",
+ "nm-signing",
  "nm-store",
  "rand 0.9.5",
  "rustls-pki-types",
@@ -1535,6 +1537,7 @@ dependencies = [
  "libc",
  "nm-api",
  "nm-core",
+ "nm-signing",
  "rand 0.9.5",
  "serde",
  "serde_json",
@@ -1556,6 +1559,15 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "ureq",
+]
+
+[[package]]
+name = "nm-signing"
+version = "0.2.1"
+dependencies = [
+ "core-foundation 0.10.1",
+ "libc",
+ "security-framework",
 ]
 
 [[package]]
