@@ -184,3 +184,54 @@ struct HTMLMinFontSizeTests {
         #expect(Look.htmlMinFontSize(theme) == nil)
     }
 }
+
+/// The controls of the reader's title line follow the theme's list
+/// (`reader.title_actions`, `specifications/themes.md`, section 6.6):
+/// their order, and which ones the mail shown has an object for.
+struct ReaderTitleActionsTests {
+    /// The default of the built-in themes.
+    static let all = ["folder_name", "show_all", "pixels", "unsubscribed",
+                      "reply_all", "reply_sender", "forward", "unsubscribe", "flag", "text_or_html"]
+
+    /// A mail with everything: a folder (in Everything), T on, blocked
+    /// pixels, an unsubscribe offer, a flag, an HTML part.
+    static let full = ReaderTitleAction.Context(
+        folderLabel: "Inbox", showAll: true, trackingPixels: 2, unsubscribedAt: nil,
+        unsubscribeOffered: true, flagged: false, hasHtml: true, quarantine: false)
+
+    @Test func theBuiltInThemesListEveryControl() {
+        for name in ["geek", "clean", "regular", "minimal"] {
+            #expect(ThemeStore.builtins[name]?.reader.titleActions == Self.all, "\(name)")
+        }
+    }
+
+    @Test func theThemeOrderIsKept() {
+        let shuffled = ["flag", "forward", "text_or_html", "reply_all", "folder_name", "reply_sender"]
+        #expect(ReaderTitleAction.shown(configured: shuffled, Self.full).map(\.rawValue) == shuffled)
+    }
+
+    @Test func aControlWithoutAnObjectForTheMailIsHidden() {
+        // A mail, nothing else: no folder, T off, no pixel, no offer, no
+        // HTML. The actions stay: a mail is open, it can be answered.
+        let empty = ReaderTitleAction.Context(flagged: true)
+        #expect(ReaderTitleAction.shown(configured: Self.all, empty).map(\.rawValue)
+                == ["reply_all", "reply_sender", "forward", "flag"])
+        // Unsubscribed: the offer is gone, the "unsubscribed on …" shows.
+        let done = ReaderTitleAction.Context(unsubscribedAt: 1_700_000_000, flagged: true)
+        #expect(ReaderTitleAction.shown(configured: Self.all, done).map(\.rawValue)
+                == ["unsubscribed", "reply_all", "reply_sender", "forward", "flag"])
+    }
+
+    @Test func quarantineHidesReplyAndForwardButNotTheFlag() {
+        var c = Self.full
+        c.quarantine = true
+        let shown = ReaderTitleAction.shown(configured: Self.all, c).map(\.rawValue)
+        #expect(!shown.contains("reply_all") && !shown.contains("reply_sender") && !shown.contains("forward"))
+        #expect(shown.contains("flag"))
+    }
+
+    @Test func anUnknownNameIsDropped() {
+        #expect(ReaderTitleAction.shown(configured: ["reply_all", "weather", "flag"], Self.full).map(\.rawValue)
+                == ["reply_all", "flag"])
+    }
+}

@@ -147,6 +147,7 @@ enum KeyAction: String, CaseIterable {
     case viewToggleHtml = "view.toggle_html"
     case viewToggleRemoteImages = "view.toggle_remote_images"
     case viewCycleStatusBar = "view.cycle_status_bar"
+    case viewResetColumnsWidth = "view.reset_columns_width"
     case viewToggleListLayout = "view.toggle_list_layout"
     case viewChooseTheme = "view.choose_theme"
     case screenDown = "screen.down"
@@ -267,7 +268,7 @@ enum KeyAction: String, CaseIterable {
         switch self {
         case .viewToggleHtml, .viewToggleRemoteImages: 0
         case .viewOneColumn, .viewTwoColumns, .viewThreeColumns: 1
-        case .viewChooseTheme, .viewToggleListLayout, .viewCycleStatusBar: 2
+        case .viewChooseTheme, .viewToggleListLayout, .viewCycleStatusBar, .viewResetColumnsWidth: 2
         case .viewSortReceived, .viewSortModified: 3
         default: nil
         }
@@ -374,6 +375,7 @@ enum KeyAction: String, CaseIterable {
         case .viewToggleHtml: return L("text / HTML")
         case .viewToggleRemoteImages: return L("remote images")
         case .viewCycleStatusBar: return L("status bar: bottom, top, hidden")
+        case .viewResetColumnsWidth: return L("Reset columns width")
         case .viewToggleListLayout: return L("list: one line or three per mail")
         case .viewChooseTheme: return L("theme…")
         case .aiComposeMenu: return L("in a reply: AI menu (proofread, rewrite, translate, subjects)")

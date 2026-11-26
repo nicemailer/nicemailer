@@ -156,7 +156,8 @@ pub async fn verify(core: &Arc<Core>, p: SyncVerifyParams) -> Result<SyncVerifyR
     let secrets = core.engine.lock().unwrap().secrets();
     let host: Arc<dyn SyncHost> = Arc::new(CoreHost(core.clone()));
     let account_id = spec.account_id;
-    let report = tokio::task::spawn_blocking(move || nm_engine::sync::verify::verify_blocking(&spec, secrets, host, p.skip_hash, p.repair))
+    let oauth = core.oauth.clone();
+    let report = tokio::task::spawn_blocking(move || nm_engine::sync::verify::verify_blocking(&spec, secrets, oauth, host, p.skip_hash, p.repair))
         .await
         .map_err(|e| RpcError::internal(e))?
         .map_err(|e| RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e)))?;

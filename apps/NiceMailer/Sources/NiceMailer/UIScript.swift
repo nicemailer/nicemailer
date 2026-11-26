@@ -73,6 +73,9 @@ enum UIScript {
     static var statusBeforeMaintenance: AppModel.Status?
     /// Lines of the reader's title line, 1 or 2 (`ReaderTitleBar`).
     static var titleLines = 0
+    /// The controls of the reader's title line, in the order shown
+    /// (`reader.title_actions` filtered by what the mail offers).
+    static var readerTitleActions: [String]?
     /// The commands of the reply show their keys alone, the line being too
     /// narrow for their words (`compose_commands_compact`).
     static var composeCommandsCompact = false
@@ -177,15 +180,6 @@ enum UIScript {
         guard isActive else { return }
         preferencesList = list
         preferencesSetup = setup
-    }
-
-    /// The chooser of the Appearance tab, once it appeared.
-    static private(set) weak var preferencesThemes: ThemeChooser?
-
-    /// Called by `AppearancePane` when it has loaded the themes.
-    static func appearanceOpened(_ chooser: ThemeChooser) {
-        guard isActive else { return }
-        preferencesThemes = chooser
     }
 
     /// The organizing of an account only looked at, once asked for.
@@ -482,15 +476,7 @@ private final class Runner {
             // `preferences` opens them, `preferences close` closes them.
             if arg == "close" {
                 UIScript.closePreferences()
-            } else if arg == "appearance" {
-                // The Appearance tab (`docs/themes.md`).
-                model.preferencesTab = .appearance
-                UIScript.openPreferences()
-                if !(await waitUntil(seconds: 5, { UIScript.preferencesThemes?.loaded == true })) {
-                    fail(lineNumber, line, "the Preferences did not load their themes")
-                }
             } else {
-                model.preferencesTab = .accounts
                 UIScript.openPreferences()
                 if !(await waitUntil(seconds: 5, { UIScript.preferencesList?.loaded == true })) {
                     fail(lineNumber, line, "the Preferences did not load their accounts")
@@ -1009,6 +995,7 @@ private final class Runner {
             // The reader's title line: subject and controls on 1 line, or
             // the subject above them on 2 (`ReaderTitleBar`).
             "title_lines": "\(UIScript.titleLines)",
+            "reader_actions": (UIScript.readerTitleActions ?? []).joined(separator: ","),
             // AppKit's delay before a tooltip, in ms (`Tooltips`).
             "tooltip_delay": "\(UserDefaults.standard.integer(forKey: Tooltips.delayKey))",
             // How the attachments of a message show (`layout.attachments`).
@@ -1166,14 +1153,26 @@ private final class Runner {
                 return abs(x - f.minX) < 1 ? "true" : "false (menu at \(Int(x)), block at \(Int(f.minX)))"
             }(),
             "menu_y": "\(Int(UIScript.frames["menu-0"]?.minY ?? -1))",
-            // Whether every row of the open menu is inside the window: a
-            // menu dropping from a block near the right edge must not be
-            // cut there. Empty when no menu is open.
+            // Whether the open menu's panel is whole inside the window, in
+            // both directions: a menu dropping from a block near the right
+            // edge must not be cut on the right, and a menu taller than the
+            // window scrolls inside (`KeyMenu.available`) instead of going
+            // past the bottom edge. Empty when no menu is open.
             "menu_fits": {
-                guard case .menu(let p) = c.overlay, let width = window?.contentView?.bounds.width else { return "" }
-                let rows = (0..<c.menuEntries(p).count).compactMap { UIScript.frames["menu-\($0)"] }
-                guard !rows.isEmpty else { return "" }
-                return rows.allSatisfy { $0.minX >= 0 && $0.maxX <= width + 0.5 } ? "true" : "false"
+                guard case .menu = c.overlay, let b = window?.contentView?.bounds,
+                      let panel = UIScript.frames["menu-panel"] else { return "" }
+                return panel.minX >= -0.5 && panel.maxX <= b.width + 0.5
+                    && panel.minY >= -0.5 && panel.maxY <= b.height + 0.5 ? "true" : "false"
+            }(),
+            // Whether the status bar (or the toolbar) is whole inside the
+            // window while a menu is open: a menu taller than the window
+            // used to push it out of sight, up past the top edge. Empty when
+            // no menu is open.
+            "bar_fits": {
+                guard case .menu = c.overlay, let b = window?.contentView?.bounds else { return "" }
+                let bars = UIScript.frames.filter { $0.key.hasPrefix("status-") }.values
+                guard !bars.isEmpty else { return "" }
+                return bars.allSatisfy { $0.minY >= -0.5 && $0.maxY <= b.height + 0.5 } ? "true" : "false"
             }(),
             // The gap between the unread count of the first row of the
             // open menu and its key on the right, as laid out, in points;
@@ -1218,22 +1217,13 @@ private final class Runner {
                 return "\(Int((fillRight - flag.maxX).rounded()))"
             }(),
             // The controls of the reader's title line shown, from left to
-            // right as laid out, comma-separated: `folder` (in
-            // "Everything"), `pixels`, `unsubscribe`, `flag`, `format` (the
-            // text | html | images switch). The information comes first,
-            // then the buttons (`ui.md`, "Boutons de l'en-tête").
-            "title_controls_order": {
-                guard m.composer == nil else { return "" }
-                var shown: [(String, String)] = []
-                if m.selectedThreadFolderLabel != nil { shown.append(("folder", "reader-folder")) }
-                if m.trackingPixels > 0 { shown.append(("pixels", "reader-pixels")) }
-                if let o = m.unsubscribeOffer, o.senderUnsubscribedAt == nil { shown.append(("unsubscribe", "reader-unsubscribe")) }
-                if m.threads.contains(where: { $0.id == m.openThread?.id }) { shown.append(("flag", "reader-flag")) }
-                if m.latestReceived?.bodyHtml != nil { shown.append(("format", "format-text")) }
-                // A frame not laid out yet leaves its control out.
-                return shown.compactMap { name, id in UIScript.frames[id].map { (name, $0.minX) } }
-                    .sorted { $0.1 < $1.1 }.map(\.0).joined(separator: ",")
-            }(),
+            // right as laid out, comma-separated, in the order the theme
+            // lists them (`reader.title_actions`, `ui.md`, "Boutons de
+            // l'en-tête"): `folder` (in "Everything"), `pixels`,
+            // `unsubscribed`, `reply_all`, `reply_sender`, `forward`,
+            // `unsubscribe`, `flag`, `format` (the text | html | images
+            // switch).
+            "title_controls_order": titleControlsOrder(),
             // Heights of the buttons of the title line, as laid out, in
             // points, comma-separated (`FramedButton`, `FramedSegments`):
             // in the reader unsubscribe, the flag and the text | html
@@ -1241,7 +1231,8 @@ private final class Runner {
             // design for reading and writing: the same height.
             "title_button_heights": {
                 let ids = m.composer == nil
-                    ? ["reader-unsubscribe", "reader-flag", "format-text"]
+                    ? ["reader-reply-all", "reader-reply-sender", "reader-forward",
+                       "reader-unsubscribe", "reader-flag", "format-text"]
                     : ["compose-command-send"]
                 return ids.compactMap { UIScript.frames[$0] }.map { "\(Int($0.height.rounded()))" }.joined(separator: ",")
             }(),
@@ -1253,6 +1244,7 @@ private final class Runner {
             "selected_snippet": controller.listLayout == .stacked
                 ? ListLayout.snippetLine(m.threads.first { $0.id == m.selectedThreadId }?.snippet) : "",
             "row_width": "\(Int((UIScript.frames["thread-\(m.selectedThreadId ?? -1)"]?.width ?? 0).rounded()))",
+            "list_fraction": String(format: "%.2f", c.listFraction),
             // The folder column of the selected row in "Everything", as
             // drawn: the folder, and its account when the row has room.
             "row_folder_with_account": "\(UIScript.rowFolderWithAccount)",
@@ -1411,18 +1403,35 @@ private final class Runner {
         return main.merging(preferencesState()) { $1 }
     }
 
+    /// `title_controls_order`: the controls of the title line shown, from
+    /// left to right as laid out, comma-separated, in the order the theme
+    /// lists them (`reader.title_actions`, `ui.md`, "Boutons de l'en-tête").
+    /// Only the controls of the current list (`reader_actions`) are read,
+    /// sorted by where they are laid out: a frame left behind by a control
+    /// that went away would sort wrong.
+    private func titleControlsOrder() -> String {
+        guard model.composer == nil else { return "" }
+        let laidOut = (UIScript.readerTitleActions ?? []).compactMap { action -> (String, CGFloat)? in
+            guard let id = Self.titleControlFrame[action], let f = UIScript.frames[id] else { return nil }
+            return (Self.titleControlName[action] ?? action, f.minX)
+        }
+        return laidOut.sorted { $0.1 < $1.1 }.map { $0.0 }.joined(separator: ",")
+    }
+
+    /// The frame of each control of the title line, by its name in
+    /// `reader.title_actions` (`title_controls_order`).
+    private static let titleControlFrame = ["folder_name": "reader-folder", "show_all": "reader-show-all",
+        "pixels": "reader-pixels", "unsubscribed": "reader-unsubscribed", "reply_all": "reader-reply-all",
+        "reply_sender": "reader-reply-sender", "forward": "reader-forward", "unsubscribe": "reader-unsubscribe",
+        "flag": "reader-flag", "text_or_html": "format-text"]
+    /// Its short name in `title_controls_order`.
+    private static let titleControlName = ["folder_name": "folder", "show_all": "show_all", "pixels": "pixels",
+        "unsubscribed": "unsubscribed", "reply_all": "reply_all", "reply_sender": "reply_sender",
+        "forward": "forward", "unsubscribe": "unsubscribe", "flag": "flag", "text_or_html": "format"]
+
     /// The Preferences' fields (`UITests/README.md`): empty while closed.
     func preferencesState() -> [String: String] {
-        // The Appearance tab: the themes, `*` before the one chosen, `!`
-        // after one refused.
-        var appearance: [String: String] = [:]
-        if let themes = UIScript.preferencesThemes {
-            appearance["prefs_themes"] = themes.themes
-                .map { ($0.name == themes.selected ? "*" : "") + $0.name + ($0.error == nil ? "" : "!") }
-                .joined(separator: ",")
-            appearance["prefs_theme_error"] = themes.error ?? ""
-        }
-        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return appearance }
+        guard let list = UIScript.preferencesList, let s = UIScript.preferencesSetup else { return [:] }
         let names: [AccountSetup.Section: String] = [.imap: "imap", .smtpPassword: "smtp-password", .smtp: "smtp", .server: "server", .importScreen: "import"]
         let act = UIScript.preferencesActivation
         let pw = UIScript.preferencesPassword
@@ -1482,7 +1491,7 @@ private final class Runner {
             "password_error": pw?.error ?? "",
             "password_saved": pw?.saved ?? "",
         ]
-        return accounts.merging(appearance) { a, _ in a }
+        return accounts
     }
 }
 

@@ -94,6 +94,7 @@
     "view.toggle_html",
     "view.toggle_remote_images",
     "view.cycle_status_bar",
+    "view.reset_columns_width",
     "view.toggle_list_layout",
     "view.choose_theme",
     "screen.down",
@@ -456,6 +457,10 @@
         "key": "S"
       },
       {
+        "action": "view.toggle_html",
+        "key": "h"
+      },
+      {
         "action": "picker.links",
         "key": "l"
       },
@@ -493,7 +498,7 @@
       },
       {
         "action": "mail.toggle_flag",
-        "key": "*"
+        "key": "I"
       },
       {
         "action": "picker.tag",
@@ -902,6 +907,10 @@
         {
           "action": "view.cycle_status_bar",
           "key": "s"
+        },
+        {
+          "action": "view.reset_columns_width",
+          "key": "r"
         },
         {
           "action": "view.sort_received",

@@ -70,3 +70,4 @@ virtual_folder = { light = "#56704E", dark = "#8AA581" }
 [reader]
 body_format = "text"
 html_min_font_size = 11
+title_actions = ["folder_name", "show_all", "pixels", "unsubscribed", "reply_all", "reply_sender", "forward", "unsubscribe", "flag", "text_or_html"]

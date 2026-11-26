@@ -102,6 +102,11 @@ struct ThemeView: Decodable, Equatable {
         /// The smallest text of a mail in HTML, in points for a 12 pt
         /// text; 0: no minimum (`Look.htmlMinFontSize`).
         let htmlMinFontSize: Int
+        /// The controls of the title line, in order (`ReaderTitleAction`):
+        /// `folder_name`, `show_all`, `pixels`, `unsubscribed`,
+        /// `reply_all`, `reply_sender`, `forward`, `unsubscribe`, `flag`,
+        /// `text_or_html`.
+        let titleActions: [String]
     }
 
     /// `[motion]` (section 6.4), in milliseconds.

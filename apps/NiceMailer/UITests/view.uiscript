@@ -95,10 +95,10 @@ expect selected_subject = La lettre de novembre
 expect body_format = text
 # The list: a paperclip before the subject of a mail with attachments (no
 # number, apart from the message count), the flag in orange at the end.
-key *
+key I
 expect selected_flagged = true
 snap list-icons
-key *
+key I
 expect selected_flagged = false
 # The HTML-only newsletter converted to text by the core keeps its blocks
 # apart (title, then paragraph).
@@ -166,6 +166,7 @@ expect unsubscribe = body:browser
 snap unsubscribe-body
 key cmd-u
 expect opened_file = https://example.org/desabonnement
+expect body_format = text
 expect reader_offset = 0
 key space
 expect reader_offset > 0
@@ -276,7 +277,7 @@ expect flash ~ opened
 # si, the last row of the menu: the PDF with the technical information
 # (the evidence); sI opens it too.
 key s
-expect menu_rows ~ i as PDF with technical information
+expect menu_rows ~ i As PDF with technical information
 key i
 expect export_files = 26
 expect flash ~ 2 mails saved

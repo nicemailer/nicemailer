@@ -215,7 +215,7 @@ struct KeymapTests {
         #expect(groups.last?.title == L("Your menus"))
         #expect(groups.last?.entries == [HelpEntry(key: "x…", label: "mine")])
         // An action without a key is left out.
-        let noFlag = Help.groups(Keymap.defaults.binding("*", to: "none", in: .mail)).flatMap(\.entries)
+        let noFlag = Help.groups(Keymap.defaults.binding("I", to: "none", in: .mail)).flatMap(\.entries)
         #expect(!noFlag.contains { $0.label == L("flag") })
     }
 }
@@ -306,7 +306,7 @@ struct KeymapControllerTests {
         #expect(controller.overlay == .menu(.user("mine")))
         let rows = controller.menuEntries(.user("mine"))
         #expect(rows.map(\.key) == ["c", "v"])
-        #expect(rows.map(\.label) == [L("to clipboard"), L("one column")])
+        #expect(rows.map(\.label) == [ThreadFilter.capitalizedFirst(L("to clipboard")), ThreadFilter.capitalizedFirst(L("one column"))])
         press("v")
         #expect(controller.overlay == .none)
         #expect(controller.columns == 1)

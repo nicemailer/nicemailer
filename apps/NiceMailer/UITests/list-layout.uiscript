@@ -20,18 +20,18 @@ key j
 expect selected = 1
 expect selected_snippet !~ Bonjour Alex
 # The flag of the selected row, on the first line, inside its fill.
-key *
+key I
 expect selected_flagged = true
 expect selected_flag_inside > 3
 snap list-layout-stacked-flagged
-key *
+key I
 # The Show menu (v) offers the other one, in its block of the
 # presentation, after the theme; four blocks, set apart by a gap.
 key v
 expect overlay ~ menu
-expect menu_rows ~ h text / HTML | i remote images || 1 one column
-expect menu_rows ~ three columns || t theme… | l list: one line or three per mail | s status bar
-expect menu_rows ~ bottom, top, hidden || c sort by reception date | m sort by modification date
+expect menu_rows ~ h Text / HTML | i Remote images || 1 One column
+expect menu_rows ~ Three columns || t Theme… | l List: one line or three per mail | s Status bar
+expect menu_rows ~ bottom, top, hidden | r Reset columns width || c Sort by reception date | m Sort by modification date
 snap list-layout-menu
 key l
 expect overlay = none
@@ -43,6 +43,19 @@ expect row_width > 400
 expect selected_snippet =
 expect selected = 1
 snap list-layout-columns
+# v r resets the list column to its standard width: half the window in
+# columns, whatever width the separator was dragged to.
+key v
+key r
+expect overlay = none
+expect list_fraction = 0.50
+expect row_width > 500
+# The width is the standard one now: the menu no longer offers v r, the
+# row would change nothing.
+key v
+expect menu_rows !~ r Reset columns width
+key esc
+expect overlay = none
 # Back to three lines per mail: the narrow list again.
 key v
 key l
@@ -50,6 +63,18 @@ expect list_layout = stacked
 expect flash ~ three lines
 expect row_width < 360
 expect selected = 1
+# v r in stacked too: a third of the window back. Its row is in the menu
+# (the width is a quarter, not the standard third)…
+key v
+expect menu_rows ~ r Reset columns width
+key r
+expect list_fraction = 0.33
+expect row_width > 360
+# …and leaves it once the width is the standard one.
+key v
+expect menu_rows !~ r Reset columns width
+key esc
+expect overlay = none
 # A narrow window: what the presentation is for.
 resize 900x800
 snap list-layout-stacked-narrow

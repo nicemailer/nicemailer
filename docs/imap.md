@@ -83,7 +83,7 @@ A response is kept in memory until decoded, so responses are bounded:
 | Body fetched whole | up to 4 MiB (`WHOLE_BODY_MAX`) | most messages: one command |
 | Pieces of a larger body | 1 MiB (`BODY_CHUNK`), `BODY.PEEK[]<offset.length>` | a 150 MB message never takes more than about 1 MiB |
 
-`fetch_body` uses the size from `RFC822.SIZE` to choose, but stops on the first short piece rather than trusting the size, which some servers count differently. It gives each piece to a callback, the streaming writer of the raw store (`RawWriter::write`, [ingestion.md](ingestion.md)), and returns `None` if the message disappeared meanwhile. The writer can check the total against `RFC822.SIZE` at the end (`RawWriter::finish`); the synchronization refuses a body whose size differs ([sync.md](sync.md), "Bodies").
+`fetch_body` uses the size from `RFC822.SIZE` to choose, but stops on the first short piece rather than trusting the size, which some servers count differently. It gives each piece to a callback, the streaming writer of the raw store (`RawWriter::write`, [ingestion.md](ingestion.md)), and returns `None` if the message disappeared meanwhile. The writer can check the total against `RFC822.SIZE` at the end (`RawWriter::finish`); the synchronization does not, since Exchange Online counts it differently from the bytes it sends, and stores a body whose size differs ([sync.md](sync.md), "Bodies").
 
 ## Failures
 
@@ -102,9 +102,29 @@ On the wire, names are in modified UTF-7 (RFC 3501, 5.1.3): `Envoyés` is `Envoy
 
 `idle(max, stop)` sends `IDLE` and waits until the server reports something (`Changes`), `max` passes (`Timeout`; at most 25 minutes, since RFC 2177 lets servers end IDLE after 30), or the future `stop` completes (`Stopped`). It then sends `DONE` and keeps what came in between. Keep-alive lines such as Dovecot's `* OK Still here` do not end it. There is no time limit on the server's silence during IDLE, since silence is its purpose.
 
+## Debug log
+
+`NICEMAILER_IMAP_LOG` in the core's environment writes the whole conversation with the servers (`nm-proto`, `trace.rs`): `1` (or `stderr`) writes to standard error, with `core.log`; any other value is a file path, appended to. Unset, nothing is formatted and a session costs what it costs without it. For example, to see what an account's server says while in IDLE:
+
+```sh
+NICEMAILER_IMAP_LOG="$HOME/Library/Application Support/NiceMailer/imap.log" make core
+```
+
+Each line has the local time to the millisecond, the number of the connection, its name, the way (`C:` sent, `S:` received) and the text, line ends escaped:
+
+```text
+14:42:31.207 #3 outlook/work C: N12 IDLE
+14:42:31.390 #3 outlook/work S: + IDLE accepted, awaiting DONE command.
+14:42:35.118 #3 outlook/work S: * 3 EXISTS
+```
+
+A connection is named by its server (`outlook.office365.com:993`) until the synchronization names it: `<account>/work`, `<account>/bodies`, `<account>/send` (the copy to Sent), `<account>/verify`. The credentials never appear: a `LOGIN` or `AUTHENTICATE` line becomes its tag, its name and its mechanism, `N1 AUTHENTICATE XOAUTH2 (credentials not logged)`, and the lines that follow it until the server answers are left out. A response longer than 300 bytes keeps its beginning and its length (`… (46376 bytes)`), so that bodies do not fill the file. The log still carries subjects, addresses and the beginning of mails: a debugging tool, never on by default, to delete once read.
+
 ## `nicemailer imap probe <key>`
 
-Connects to the server of an account through the core (method `probe_account`), which alone can read the password, and shows what the server offers:
+Connects to the server of an account through the core (method `probe_account`), which alone can read the password, and shows what the server offers. An OAuth2 account (Outlook.com, Microsoft 365) logs in with an access token, as its synchronization does: the one the core holds, else one renewed from the refresh token of the Keychain, and a new one once if the server refuses it. Only a refresh token the provider refuses asks to sign in again (`nicemailer account login <key>`).
+
+What it shows:
 
 ```text
 $ nicemailer imap probe dovecot

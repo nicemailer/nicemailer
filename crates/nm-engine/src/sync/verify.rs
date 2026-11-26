@@ -14,10 +14,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use nm_api::{FolderVerify, SyncVerifyReport};
-use nm_proto::imap::{FetchItems, MailboxName, Session, Timeouts, Uids};
+use nm_proto::imap::{FetchItems, ImapError, MailboxName, Session, Timeouts, Uids};
 use nm_store::sync::ServerFlags;
 
 use super::{AccountSpec, SyncHost, read};
+use crate::config::AuthMethod;
+use crate::oauth2::Oauth;
 use crate::probe::imap_spec;
 use crate::secrets::{self, Secrets};
 
@@ -29,22 +31,23 @@ const LIST_MAX: usize = 20;
 pub fn verify_blocking(
     spec: &AccountSpec,
     secrets: Arc<dyn Secrets>,
+    oauth: Arc<Oauth>,
     host: Arc<dyn SyncHost>,
     skip_hash: bool,
     repair: bool,
 ) -> Result<SyncVerifyReport, String> {
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
-    rt.block_on(verify(spec, secrets.as_ref(), host.as_ref(), skip_hash, repair))
+    rt.block_on(verify(spec, secrets.as_ref(), &oauth, host.as_ref(), skip_hash, repair))
 }
 
-async fn verify(spec: &AccountSpec, secrets: &dyn Secrets, host: &dyn SyncHost, skip_hash: bool, repair: bool) -> Result<SyncVerifyReport, String> {
+async fn verify(spec: &AccountSpec, secrets: &dyn Secrets, oauth: &Oauth, host: &dyn SyncHost, skip_hash: bool, repair: bool) -> Result<SyncVerifyReport, String> {
     let started = Instant::now();
     let cfg = &spec.config;
-    let password = secrets::imap_password(secrets, &spec.key, cfg).map_err(|r| r.message(&spec.key, cfg))?;
     let mut s = Session::connect(&imap_spec(cfg), Timeouts::default()).await.map_err(|e| e.to_string())?;
+    s.set_trace_label(&format!("{}/verify", spec.key));
     // Verifying reads only.
     s.forbid_writes();
-    s.login(&cfg.imap.username, password.expose()).await.map_err(|e| e.to_string())?;
+    login(&mut s, spec, secrets, oauth).await?;
     let account_id = spec.account_id;
     let folders = read(host, |st| st.account_sync_folders(account_id)).map_err(|e| e.to_string())?;
     let listed: Vec<String> = s.list().await.map_err(|e| e.to_string())?.into_iter().map(|e| e.name.name).collect();
@@ -129,5 +132,30 @@ fn push(list: &mut Vec<u32>, count: &mut u64, uid: u32) {
     *count += 1;
     if list.len() < LIST_MAX {
         list.push(uid);
+    }
+}
+
+/// Logs in as the worker does: the password, or for an OAuth2 account
+/// (Outlook, Microsoft 365) an access token, the one in memory else one
+/// renewed, and a new one once if the server refuses it (`oauth2.md`,
+/// section 6). The verification read a password only, and an OAuth2
+/// account, which has none, could not be verified.
+async fn login(s: &mut Session, spec: &AccountSpec, secrets: &dyn Secrets, oauth: &Oauth) -> Result<(), String> {
+    let cfg = &spec.config;
+    let user = &cfg.imap.username;
+    if cfg.auth != AuthMethod::Oauth2 {
+        let password = secrets::imap_password(secrets, &spec.key, cfg).map_err(|r| r.message(&spec.key, cfg))?;
+        return s.login(user, password.expose()).await.map_err(|e| e.to_string());
+    }
+    let token = oauth.access_token(&spec.key, cfg, secrets).await.map_err(|e| e.why().message())?;
+    match s.login_oauth2(user, &token).await {
+        // A token the core believed valid, refused (revoked, or renewed by
+        // another Mac): a new one, once. The session stays usable after a
+        // refused AUTHENTICATE.
+        Err(ImapError::AuthFailed(_)) => {
+            let token = oauth.access_token_forced(&spec.key, cfg, secrets).await.map_err(|e| e.why().message())?;
+            s.login_oauth2(user, &token).await.map_err(|e| e.to_string())
+        }
+        r => r.map_err(|e| e.to_string()),
     }
 }

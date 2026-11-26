@@ -58,9 +58,9 @@ mod send;
 mod spool;
 pub mod verify;
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use nm_api::{AccountSync, Event};
@@ -160,9 +160,13 @@ pub(crate) struct Control {
     spool: AtomicBool,
     /// Bodies the user is waiting for (a message opened), first served.
     priority: Mutex<VecDeque<i64>>,
-    /// Bodies refused this run (size other than announced): not tried
-    /// again until the core restarts.
-    refused: Mutex<HashSet<i64>>,
+    /// Bodies stored this run whose size differs from the `RFC822.SIZE`
+    /// the server announced (`bodies.rs`): counted by both connections of
+    /// the account, shown by `sync_status` (`bodies_size_differs`).
+    ///
+    /// Rust note: an atomic, not a `Mutex<u64>`: two threads add to it and
+    /// read it, and a single number needs no lock around it.
+    pub(crate) size_differs: AtomicU64,
     /// The server cuts connections left idle: the body connection is closed
     /// and the work connection fetches the bodies (`pace.rs`).
     pub(crate) one_connection: AtomicBool,
@@ -225,11 +229,25 @@ pub struct Syncer {
     /// The OAuth2 state: access tokens in memory, renewals (`oauth2.rs`).
     oauth: Arc<crate::oauth2::Oauth>,
     workers: Mutex<BTreeMap<String, Worker>>,
+    /// The user's addresses, lowercase: those of every IMAP account and
+    /// its identities, whatever the account that receives (`apply`).
+    /// Read by each pass of each worker: mail from one of them is never
+    /// screened (`reception.rs`). Shared and not part of [`AccountSpec`]:
+    /// an identity added to one account would otherwise restart every
+    /// worker, a login each.
+    own: Own,
 }
+
+/// The user's addresses, shared by the workers (see [`Syncer`]).
+///
+/// Rust note: `RwLock` lets many threads read at once, and one write at a
+/// time; the passes read, `apply` writes, rarely. The inner `Arc` makes a
+/// pass's copy cheap: cloning it copies a pointer, not the list.
+pub(crate) type Own = Arc<RwLock<Arc<Vec<String>>>>;
 
 impl Syncer {
     pub fn new(host: Arc<dyn SyncHost>, secrets: Arc<dyn Secrets>, oauth: Arc<crate::oauth2::Oauth>) -> Syncer {
-        Syncer { host, secrets, oauth, workers: Mutex::new(BTreeMap::new()) }
+        Syncer { host, secrets, oauth, workers: Mutex::new(BTreeMap::new()), own: Own::default() }
     }
 
     /// Brings the workers in line with the accounts of the file: starts
@@ -238,7 +256,11 @@ impl Syncer {
     /// not wait for a stopped worker to end; the new worker of a changed
     /// account waits for it instead, so that two workers never write the
     /// same account at once.
+    ///
+    /// The user's addresses are those of every account of the file, with
+    /// its identities: they apply from the next pass of each worker.
     pub fn apply(&self, accounts: Vec<AccountSpec>) {
+        *self.own.write().unwrap() = Arc::new(own_addresses(&accounts));
         let mut workers = self.workers.lock().unwrap();
         let keys: Vec<String> = workers.keys().cloned().collect();
         let mut previous: BTreeMap<String, Vec<JoinHandle<()>>> = BTreeMap::new();
@@ -255,7 +277,7 @@ impl Syncer {
                 continue;
             }
             let wait = previous.remove(&spec.key).unwrap_or_default();
-            let w = account::start(spec.clone(), self.host.clone(), self.secrets.clone(), self.oauth.clone(), wait);
+            let w = account::start(spec.clone(), self.host.clone(), self.secrets.clone(), self.oauth.clone(), self.own.clone(), wait);
             workers.insert(spec.key.clone(), w);
         }
     }
@@ -418,4 +440,37 @@ impl Syncer {
 /// Current time, Unix seconds.
 pub(crate) fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// The user's addresses: the main address and the identities of every
+/// account, lowercase, sorted, each once.
+fn own_addresses(accounts: &[AccountSpec]) -> Vec<String> {
+    let mut own: Vec<String> = accounts
+        .iter()
+        .flat_map(|a| std::iter::once(&a.config.email).chain(a.config.identities.iter().map(|i| &i.email)))
+        .map(|e| e.trim().to_lowercase())
+        .filter(|e| !e.is_empty())
+        .collect();
+    own.sort();
+    own.dedup();
+    own
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every account's addresses count for every account: a mail from the
+    /// user's beres account to their Outlook one is the user's own mail.
+    #[test]
+    fn the_own_addresses_are_those_of_every_account() {
+        let text = "[accounts.beres]\nemail = \"Achille@Beres.example\"\n[accounts.beres.imap]\nhost = \"imap.beres.example\"\n\
+                    [[accounts.beres.identities]]\nemail = \"contact@beres.example\"\n\
+                    [accounts.outlook]\nemail = \"achille@outlook.example\"\n[accounts.outlook.imap]\nhost = \"imap.outlook.example\"\n\
+                    [[accounts.outlook.identities]]\nemail = \"achille@beres.example\"\n";
+        let accounts = crate::config::parse_accounts(text).unwrap();
+        let specs: Vec<AccountSpec> =
+            accounts.into_iter().enumerate().map(|(i, (key, config))| AccountSpec { key, account_id: i as i64 + 1, config }).collect();
+        assert_eq!(own_addresses(&specs), ["achille@beres.example", "achille@outlook.example", "contact@beres.example"]);
+    }
 }

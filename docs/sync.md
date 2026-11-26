@@ -70,7 +70,7 @@ The plan had a third connection for IDLE alone. The work connection leaves IDLE 
 A mail moved by the phone from Inbox to Archive vanishes from the Inbox and appears in Archive. Deleted then inserted again, it would lose its id, tags, history and consultation. The pass therefore finds every deletion of every folder (step 3) before writing any arrival (step 4): a new mail is the move of an existing row when
 
 - it has a `Message-ID`, and exactly one row of the account has it, in another folder;
-- of the same size (RFC822.SIZE, or the bytes stored once the body came);
+- of the same size (RFC822.SIZE, or the bytes stored once the body came), or, for a row that has its body, with the same Subject and Date: Exchange Online announces a size other than the bytes it sends ("Bodies" below), and every move made on the phone would otherwise lose the tags and the history of the mail and download its body again. The size, or the headers, tell a different mail that has the same Message-ID, such as the copy a mailing list sends back with a footer and a `[list]` prefix;
 - whose UID vanished in this pass.
 
 The row then moves (`folder_id`, `uid`, flags, `modified_by = 'imap'`) and keeps everything else. Like every change seen on the server, it is not journaled in `audit_log` (`tracabilite.md`, "Ce qui n'est pas journalisé"). Anything else is a new row: a copy (the original stayed), or a move that cannot be told from one.
@@ -153,7 +153,7 @@ The core logs each wake: `the Mac slept, the connection is still alive`, or `…
 
 On the body connection (or the work connection, "Connections" above): first the bodies the user is waiting for (a thread opened by `get_thread` whose mails have no body yet), then the Inbox, the most recent first, then the other folders. Each body is streamed into the raw store and completed in the database in batches ([ingestion.md](ingestion.md)).
 
-A body whose size differs from the `RFC822.SIZE` the server announced is refused (`stockage-brut.md`, section 5, step 2), and not tried again until the core restarts: retrying would download it again and again. `sync status` counts them (`bodies_refused`). A server that counts sizes differently from what it sends would leave such messages without body: none was seen on Dovecot; to be watched on other servers.
+A body whose size differs from the `RFC822.SIZE` the server announced is stored all the same (`stockage-brut.md`, section 5, step 2). Exchange Online (Outlook.com, Microsoft 365) announces a size other than the bytes it sends for almost every mail: on 25 November 2026, 13,156 bytes came for 46,376 announced, and refusing the body, as the core did before, left every real mail of an Outlook account "(body not downloaded)". The check protected from nothing the protocol does not already catch: a body fetched whole is an IMAP literal that states its own length, so a connection cut inside it is an error, never a short body (`ingest_imap.rs`, "a cut in the middle of a body stores nothing"); a body fetched in pieces ends at the first short piece. The core logs each difference (`sync: body of message 401589: 13156 bytes received, 46376 announced (stored all the same)`), and `sync status` counts them since the core started (`bodies_size_differs`): a count, not an error. Dovecot, Gmail and Infomaniak announce the exact size.
 
 ## Failures
 
@@ -176,7 +176,7 @@ nicemailer sync now [<key>]                 # a full pass now
 nicemailer sync verify <key> [--skip-hash] [--json]
 ```
 
-`sync verify` is the criterion of "perfect retrieval" (`plan-imap.md`, section 4): on a connection of its own, read-only, it compares each folder of the server with the database: same UIDs, same flags and keywords, and for each complete message a raw file whose hash is checked again (`--skip-hash`: only that the file exists). It exits with status 1 on any difference. Run while the synchronization works, it may see a mail the server has and the database not yet.
+`sync verify` is the criterion of "perfect retrieval" (`plan-imap.md`, section 4): on a connection of its own, read-only, it compares each folder of the server with the database: same UIDs, same flags and keywords, and for each complete message a raw file whose hash is checked again (`--skip-hash`: only that the file exists). It exits with status 1 on any difference. Run while the synchronization works, it may see a mail the server has and the database not yet. It logs in as the synchronization does: with the password, or for an OAuth2 account (Outlook.com, Microsoft 365) with an access token, renewed if needed and once more if the server refuses it.
 
 ```
 INBOX                      3 on the server,       3 here,       3 raw files checked,      0 bodies to come: ok
@@ -184,7 +184,7 @@ Archive                    1 on the server,       1 here,       1 raw files chec
 Same on both sides (0.1 s)
 ```
 
-`sync_status` gives, per account: `state` (`connecting`, `syncing`, `idle`, `waiting`, `auth_failed`, `stopped`), `error`, `mode` (`qresync`, `condstore`, `none`), `last_pass`, `passes` (count since the core started), `next_retry`, `bodies_missing`, `bodies_refused`, and per folder its counters, its last synchronization and whether the server still lists it.
+`sync_status` gives, per account: `state` (`connecting`, `syncing`, `idle`, `waiting`, `auth_failed`, `stopped`), `error`, `mode` (`qresync`, `condstore`, `none`), `last_pass`, `passes` (count since the core started), `next_retry`, `bodies_missing`, `bodies_size_differs`, and per folder its counters, its last synchronization and whether the server still lists it.
 
 ### Progress
 
@@ -199,8 +199,8 @@ The app shows it at the right of its status bar, so that the first synchronizati
 
 | Test | What it checks |
 | --- | --- |
-| `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, a copy or an uncertain move inserted, flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
-| `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file |
+| `crates/nm-store/tests/sync.rs` | folder listing (roles of the first listing only, a rename found by `UIDVALIDITY`, a role folder gone kept), flags and keywords, a move made elsewhere kept, on Exchange too once the body is stored (another size, the same Subject and Date), a copy or an uncertain move inserted (another size, and another Subject or Date once the body is stored), flags and deletions in one transaction applied twice harmlessly, `uidnext` per batch, a UID already known not inserted twice, purge, nothing of it journaled (`tracabilite.md`), the order of bodies |
+| `crates/nm-daemon/tests/sync_rpc.rs` (`make imap-test`) | the real core against Dovecot, a second connection playing the phone. On both servers: first synchronization, new mail seen by IDLE and announced, flags, a move (with `MOVE`, and copy-delete-expunge on the minimal server) keeping the message's id, a deletion, changes made in NiceMailer reaching the server ([spool.md](spool.md)); `sync_verify` clean after each step. Also: one connection doing everything; a folder replaced (new `UIDVALIDITY`); a refused login waiting for a new password; network cuts at several moments (login, listing, bodies) without loss, duplicate or partial file; a body of another size than announced (as Exchange sends) stored, logged and counted |
 | `crates/nm-engine/src/sync/pace.rs` (unit tests) | the pace of the logins (no limit without a block; a block pauses then halves the pace; blocks that follow double the pause and halve the limit down to 3; a lock pauses longer; turned away counts from the third time; the signals of Gmail, Dovecot and the network told apart; kept across a restart and forgotten after 30 days; an hour asleep counts); no login within 15 s of a wake; what a cut in IDLE teaches (renewal at half, then polling; polling at once for a cut within 10 s) |
 | `crates/nm-engine/src/sync/clock.rs` (unit tests) | the continuous clock never behind the awake clock; a gap of a few seconds is a sleep, a drift is not; a wait lasts its time on the continuous clock |
 | `crates/nm-proto/tests/imap_script.rs` | a login refused with `[UNAVAILABLE]`, `[LIMIT]` or `[INUSE]` told apart from a wrong password; a response code named as the server wrote it |

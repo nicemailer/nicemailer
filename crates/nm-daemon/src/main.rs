@@ -1555,6 +1555,40 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
         };
         (engine.secrets(), account.clone())
     };
+    let spec = nm_engine::probe::imap_spec(&account);
+    let user = account.imap.username.as_str();
+    // Rust note: an inner `async fn` rather than a closure. A closure
+    // cannot say that the future it returns borrows the credential it is
+    // given; a function's signature ties both to the same lifetime.
+    async fn probe(
+        spec: &nm_proto::imap::ServerSpec,
+        user: &str,
+        cred: nm_engine::probe::Cred<'_>,
+    ) -> Result<ProbeReport, nm_proto::imap::ImapError> {
+        nm_engine::probe::probe(spec, user, cred, nm_proto::imap::Timeouts::default()).await
+    }
+    let failed = |e: nm_proto::imap::ImapError| RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e.to_string()));
+    if account.auth == nm_engine::config::AuthMethod::Oauth2 {
+        // An OAuth2 account logs in with an access token, as its worker
+        // does (`specifications/oauth2.md`, section 6): the one in memory,
+        // else one renewed from the refresh token of the Keychain. The
+        // probe used to read a password only, and answered "the account
+        // must be signed in again" for an account that was signed in.
+        let token_error = |e: nm_engine::oauth2::TokenError| {
+            let code = if e.is_temporary() { error_code::SERVER } else { error_code::ACCOUNT_NOT_READY };
+            RpcError::new(code, e.why())
+        };
+        let token = core.oauth.access_token(&p.account, &account, secrets.as_ref()).await.map_err(token_error)?;
+        return match probe(&spec, user, nm_engine::probe::Cred::Token(&token)).await {
+            // A token the core believed valid, refused (revoked, or
+            // renewed by another Mac): a new one, once, as the worker does.
+            Err(nm_proto::imap::ImapError::AuthFailed(_)) => {
+                let token = core.oauth.access_token_forced(&p.account, &account, secrets.as_ref()).await.map_err(token_error)?;
+                probe(&spec, user, nm_engine::probe::Cred::Token(&token)).await.map_err(failed)
+            }
+            r => r.map_err(failed),
+        };
+    }
     // The password is read on a blocking thread (the Keychain may take a
     // moment), after the check that it was saved for this very server.
     let key = p.account.clone();
@@ -1569,10 +1603,7 @@ async fn probe_account(core: &Arc<Core>, p: ProbeAccountParams) -> Result<ProbeR
             };
             RpcError::new(code, refusal.why(&p.account, &account))
         })?;
-    let spec = nm_engine::probe::imap_spec(&account);
-    nm_engine::probe::probe(&spec, &account.imap.username, nm_engine::probe::Cred::Password(password.expose()), nm_proto::imap::Timeouts::default())
-        .await
-        .map_err(|e| RpcError::new(error_code::SERVER, reason::IMAP_FAILED.with("server_text", e.to_string())))
+    probe(&spec, user, nm_engine::probe::Cred::Password(password.expose())).await.map_err(failed)
 }
 
 /// Reads `config.toml` and `accounts.toml` again after a change seen by the

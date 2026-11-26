@@ -1,0 +1,28 @@
+# The controls of the reader's title line come from the theme
+# (`reader.title_actions`, themes.md section 6.6): the fixture's theme
+# "actions" keeps only the flag and the forward, in this order. The
+# newsletter offers an unsubscribe and has a blocked pixel: neither appears.
+# A control left out is hidden, its key still works.
+key @
+type fixture
+key ret
+key ;
+key a
+expect selected_subject = La lettre de novembre
+expect tracking_pixels = 1
+expect reader_actions = flag,forward
+expect title_controls_order = flag,forward
+# The forward button opens the forward; Escape comes back, the draft kept.
+click reader:forward
+expect composing = true
+key esc
+expect composing = false
+# `r` still replies to all, without a button on the line.
+key r
+expect composing = true
+key esc
+expect composing = false
+# The flag button works too.
+click reader:flag
+expect selected_flagged = true
+snap reader-actions

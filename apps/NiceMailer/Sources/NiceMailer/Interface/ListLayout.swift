@@ -49,6 +49,16 @@ enum ListLayout: String, CaseIterable {
         }
     }
 
+    /// The standard width the menu's reset puts back (`v` `r`,
+    /// `view.reset_columns_width`): half the window in columns, a third in
+    /// stacked, whatever width the user left by dragging the separator.
+    var standardFraction: Double {
+        switch self {
+        case .columns: 0.5
+        case .stacked: 1.0 / 3.0
+        }
+    }
+
     /// The other presentation: `v` `l` goes from one to the other.
     var toggled: ListLayout { self == .columns ? .stacked : .columns }
 

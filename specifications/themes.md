@@ -15,7 +15,7 @@ Ce document spécifie comment un thème de l'app Swift est entièrement décrit 
 - **Un thème ne change pas ce qui part.** Il règle la lecture, jamais la rédaction : le format d'un nouveau mail reste `compose.format` dans `config.toml` (`edition.md`, section 3). Changer de thème pour son apparence ne doit pas changer le MIME envoyé aux destinataires, et un thème reçu de quelqu'un ne doit rien décider de ce qu'on envoie.
 - **Mêmes touches pour tous les thèmes.** Le clavier ne dépend pas du thème (`raccourcis.md`) ; un thème choisit seulement si les blocs rappellent leur touche.
 - **Le noyau lit les fichiers.** Comme `config.toml` et `keymap.toml`, c'est le noyau qui lit, valide, résout l'héritage et surveille les fichiers ; l'app reçoit le thème résolu par le contrat (section 8). L'app ne fait que deux choses que le noyau ne peut pas faire : traduire une couleur du système et vérifier qu'une police est installée sur le Mac (section 7).
-- **Pour l'utilisateur avancé, par des fichiers.** Les Préférences choisissent un thème parmi ceux du dossier (section 9) ; elles ne les modifient pas. On modifie un thème en éditant son fichier, que le noyau crée commenté.
+- **Pour l'utilisateur avancé, par des fichiers.** Le thème se choisit au clavier (`v` `t`, section 9) ou dans `config.toml` ; on ne modifie un thème qu'en éditant son fichier, que le noyau crée commenté.
 
 ## 3. Emplacement, création, lecture
 
@@ -169,6 +169,9 @@ Longueurs en points pour un texte de 12 pt (section 5.3).
 | --- | --- | --- | --- | --- | --- |
 | `body_format` | `text`, `html` | `text` | `html` | `html` | Affichage des mails reçus quand rien n'est mémorisé pour leur expéditeur |
 | `html_min_font_size` | 0, ou 6 à 24 | 11 | 11 | 11 | Plus petit texte d'un mail en HTML, en points pour un texte de 12 pt : un texte plus petit (`px`, `pt`, `em`, `<font size=1>`, `<small>`) est dessiné à cette taille ; elle grandit avec la taille du texte (⌘+ ⌘−) comme toute la page ; 0 : aucun minimum. Ajouté en novembre 2026 |
+| `title_actions` | liste de noms, voir ci-dessous | `["folder_name", "show_all", "pixels", "unsubscribed", "reply_all", "reply_sender", "forward", "unsubscribe", "flag", "text_or_html"]` | idem | idem | Les contrôles de la ligne de titre du lecteur, dans l'ordre d'affichage. Ajouté en novembre 2026 |
+
+- **`title_actions`** liste les contrôles de la ligne de titre du lecteur (`ui.md`, « Boutons de l'en-tête »), dans l'ordre : d'abord ce qu'elle dit — `folder_name` (le dossier en Everything), `show_all` (le `T`), `pixels` (l'œil barré des pixels bloqués), `unsubscribed` (« désabonné le … ») — puis les actions : `reply_all` (`r`), `reply_sender` (`R`), `forward` (`F`), `unsubscribe` (⌘U), `flag` (`I`), `text_or_html` (le sélecteur text | html | images). Un nom omis n'apparaît plus, sa touche marche encore ; un nom inconnu ou en double refuse le fichier. Un contrôle sans objet pour le mail affiché est caché (pas d'offre de désabonnement, pas de partie HTML…), et en Quarantine les trois boutons de réponse et de transfert sont cachés.
 
 - **La page HTML suit la taille du texte** (ajouté en novembre 2026) : elle est écrite pour un texte de 12 pt, et WebKit la zoome du rapport entre la taille du texte et 12 (× 4/3 à 16 pt), les tailles que le mail écrit en `pt` ou en `px` comprises. Avant, l'app ne grandissait que ses propres tailles : le `12pt` d'un mail d'Outlook restait à 16 px à côté d'un texte de 21. Une mise en page à largeur fixe grandit aussi, et défile horizontalement dans son cadre si elle dépasse la colonne.
 
@@ -206,7 +209,7 @@ Le reste est celui de clean : les couleurs, la liste sur trois lignes, les ligne
 ## 8. Contrat et CLI
 
 - **`theme_get`** renvoie le thème résolu de `ui.theme` : son nom, sa chaîne d'héritage (`["mon-theme", "clean"]`), toutes les clés du catalogue avec leur valeur (couleurs en paires `light` / `dark` ou en noms du système), et ses avertissements. Un `ui.theme` qui ne désigne aucun thème donne `geek` avec un avertissement ; `config.toml` n'est pas refusé pour autant.
-- **`theme_list`** renvoie les thèmes disponibles : nom, origine (`builtin`, `builtin_modified` quand un fichier modifie un thème livré, `user`), parent, et l'erreur qui fait refuser son fichier le cas échéant. Les Préférences s'en servent.
+- **`theme_list`** renvoie les thèmes disponibles : nom, origine (`builtin`, `builtin_modified` quand un fichier modifie un thème livré, `user`), parent, et l'erreur qui fait refuser son fichier le cas échéant. Le sélecteur `v` `t` de l'app s'en sert.
 - **`config_set_theme {name}`** écrit `ui.theme` dans `config.toml`, en gardant le reste du fichier tel quel (commentaires et ordre compris). C'est, avec `config_set_compose_format` (`edition.md`, section 3), l'une des deux seules écritures de `config.toml` par le noyau en dehors de sa création ; chacune se limite à sa clé.
 - **Événement `ThemeChanged`**, émis quand le thème appliqué change : un autre `ui.theme`, ou un fichier de sa chaîne d'héritage modifié et valide. Un fichier refusé émet `ConfigError`.
 - **CLI** :
@@ -220,7 +223,7 @@ Le reste est celui de clean : les couleurs, la liste sur trois lignes, les ligne
 ## 9. Choix du thème
 
 - `ui.theme` dans `config.toml` : le nom d'un thème, `"geek"` par défaut.
-- Un onglet **Apparence** des Préférences liste les thèmes (`theme_list`), les livrés d'abord ; choisir l'un l'écrit (`config_set_theme`) et l'applique aussitôt. Un thème refusé est grisé, avec son erreur. Un bouton « Ouvrir le dossier des thèmes » ouvre `themes/` dans le Finder.
+- Au clavier, `v` `t` (Afficher, thème…) dans la fenêtre principale liste les thèmes (`theme_list`), celui en cours en premier ; Return sur l'un l'écrit (`config_set_theme`) et l'applique aussitôt. Un thème refusé est listé avec son erreur et ne peut pas être choisi.
 - Le thème vaut pour toute l'app et toutes ses fenêtres (`ui.md`, « Fenêtres »).
 - `ui.title_bar` de `config.toml` est remplacé par `window.title_bar` du thème. Écrit dans `config.toml`, il est encore lu et l'emporte, avec un avertissement qui renvoie au thème ; il sera retiré dans une version suivante.
 

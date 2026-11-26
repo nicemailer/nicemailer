@@ -201,7 +201,7 @@ struct QuarantineTests {
 
     @Test func theFlagAndTheKeysThatOnlyReadStay() async {
         await goToQuarantine()
-        press("*")
+        press("I")
         _ = await eventually { !core.calls("set_thread_flagged").isEmpty }
         #expect(core.calls("set_thread_flagged").first?["thread_ids"] as? [Int] == [51])
         press("j")

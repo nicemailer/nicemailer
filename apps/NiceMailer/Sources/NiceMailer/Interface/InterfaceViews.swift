@@ -199,37 +199,45 @@ private struct WindowContent: View {
                                highlighted: controller.menuIndex,
                                onSelect: { controller.chooseMenuEntry($0) },
                                onHover: { controller.hoverMenu($0, inside: $1) })
-            if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
-                // Each menu drops down from its block of the status bar:
-                // under it when the bar is at the top, above it when the
-                // bar is at the bottom (`ui.md`).
-                //
-                // A block near the right end (Save in the toolbar of
-                // regular) would push the menu out of the window: its right
-                // part cut, and the layer of the overlay widened past the
-                // window, which moved the blocks, which moved the menu again
-                // (a layout loop, and the columns of the list shifted). The
-                // room before the menu is a spacer that gets at most `x - 6`
-                // and never more than what the menu and a margin leave: the
-                // menu is pushed back to the left just enough to stay whole.
-                //
-                // Swift note: `layoutPriority(1)` makes the HStack serve the
-                // spacer first, once the menu (fixed size) has its width;
-                // the last spacer takes what is left.
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0).frame(maxWidth: max(0, x - 6)).layoutPriority(1)
-                    menu
-                    // At least a margin before the window's edge, as a menu
-                    // of macOS keeps.
-                    Spacer(minLength: 8)
+            // The menu never takes more than the window's content height
+            // (`KeyMenu.available`): in a short window its rows scroll
+            // inside it instead of the menu growing past the window, which
+            // pushed the status bar out of sight.
+            GeometryReader { geo in
+                if controller.statusPosition != .hidden, let x = controller.menuBlockX[prefix] {
+                    // Each menu drops down from its block of the status bar:
+                    // under it when the bar is at the top, above it when the
+                    // bar is at the bottom (`ui.md`).
+                    //
+                    // A block near the right end (Save in the toolbar of
+                    // regular) would push the menu out of the window: its right
+                    // part cut, and the layer of the overlay widened past the
+                    // window, which moved the blocks, which moved the menu again
+                    // (a layout loop, and the columns of the list shifted). The
+                    // room before the menu is a spacer that gets at most `x - 6`
+                    // and never more than what the menu and a margin leave: the
+                    // menu is pushed back to the left just enough to stay whole.
+                    //
+                    // Swift note: `layoutPriority(1)` makes the HStack serve the
+                    // spacer first, once the menu (fixed size) has its width;
+                    // the last spacer takes what is left.
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0).frame(maxWidth: max(0, x - 6)).layoutPriority(1)
+                        // 4 points less than the window's content: the
+                        // `.padding(.vertical, 2)` below.
+                        menu.capped(at: geo.size.height - 4)
+                        // At least a margin before the window's edge, as a menu
+                        // of macOS keeps.
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: controller.statusPosition == .bottom ? .bottom : .top)
+                } else {
+                    // No block to drop from (status bar hidden, or another
+                    // screen): bottom-right corner, as in Helix.
+                    menu.capped(at: geo.size.height - 24).padding(12)
                 }
-                .padding(.vertical, 2)
-                .frame(maxWidth: .infinity, maxHeight: .infinity,
-                       alignment: controller.statusPosition == .bottom ? .bottom : .top)
-            } else {
-                // No block to drop from (status bar hidden, or another
-                // screen): bottom-right corner, as in Helix.
-                menu.padding(12)
             }
         case .help:
             HelpPanel(groups: Help.groups(controller.keymap, severalAccounts: controller.hasSeveralAccounts))
@@ -1665,14 +1673,19 @@ private struct ReaderColumn: View {
             // The address book's icons are part of the blocks: the text is
             // rebuilt when the cards arrive (`TextReader.refresh`).
             let blocks = ThreadDisplay.blocks(thread, state, book: model.senderBook)
+            // The controls of the title line, in the order the theme lists
+            // them (`reader.title_actions`).
+            let actions = ReaderTitleAction.shown(configured: ThemeStore.active.reader.titleActions, titleContext(state))
             VStack(spacing: 0) {
                 // The subject, then the controls of the mail; on two lines
                 // when the subject would not fit whole beside them
                 // (`ReaderTitleBar`).
                 ReaderTitleBar(subject: thread.subject, tags: thread.labels.tags, groups: thread.labels.groups,
                                maxWidth: Look.readerMaxWidth, scrollerWidth: controller.readerScrollerWidth) {
-                    titleControls(state)
+                    titleControls(actions, state)
                 }
+                .onAppear { UIScript.readerTitleActions = actions.map(\.rawValue) }
+                .onChange(of: actions) { _, new in UIScript.readerTitleActions = new.map(\.rawValue) }
                 Look.separator.frame(height: 1)
                 Group {
                     if model.bodyFormat != "text" {
@@ -1700,92 +1713,142 @@ private struct ReaderColumn: View {
         }
     }
 
-    /// The controls of the title line, left to right (`ui.md`, "Boutons de
-    /// l'en-tête"): first what the line says, then what can be done.
-    ///
-    /// - The information: the folder of the mail (in "Everything"), `T`,
-    ///   the blocked pixels, "unsubscribed on …".
-    /// - The buttons: unsubscribe, the flag, the text | html | images
-    ///   switch.
+    /// What the mail shown offers to the title line
+    /// (`ReaderTitleAction.Context`).
+    private func titleContext(_ state: ThreadDisplay.State) -> ReaderTitleAction.Context {
+        let offer = model.unsubscribeOffer
+        return ReaderTitleAction.Context(
+            folderLabel: model.selectedThreadFolderLabel,
+            showAll: state.showAll,
+            trackingPixels: model.trackingPixels,
+            unsubscribedAt: offer?.senderUnsubscribedAt,
+            unsubscribeOffered: offer != nil && offer?.senderUnsubscribedAt == nil,
+            flagged: model.threads.first(where: { $0.id == model.openThread?.id })?.isFlagged,
+            hasHtml: model.latestReceived?.bodyHtml != nil,
+            quarantine: model.currentRole == "quarantine")
+    }
+
+    /// The controls of the title line, in the order the theme lists them
+    /// (`reader.title_actions`, `ui.md`, "Boutons de l'en-tête"): first what
+    /// the line says, then what can be done. A control without an object for
+    /// the mail shown is left out (`ReaderTitleAction.shown`).
     ///
     /// The controls are aligned on the right: with the information first,
     /// the buttons stay at the same place from one mail to the next,
-    /// whatever the length of a folder's name or the number of pixels, and
-    /// the switch always ends the line.
+    /// whatever the length of a folder's name or the number of pixels.
     @ViewBuilder
-    private func titleControls(_ state: ThreadDisplay.State) -> some View {
-        // In "Everything", the folder of the mail (and its account in
-        // "all"): the list mixes every folder.
-        if let label = model.selectedThreadFolderLabel {
-            Text(label).foregroundStyle(Palette.muted).lineLimit(1)
-                .uiTarget("reader-folder")
-        }
-        if state.showAll {
-            Text("T").foregroundStyle(Palette.accentText)
-        }
-        // Tracking pixels the core removed (`ui.md`, "Images distantes"):
-        // shown in every display, they are never loaded. An eye struck out
-        // and the number, shorter than a sentence on a line that holds the
-        // subject; the tooltip and VoiceOver say what it is.
-        if model.trackingPixels > 0 {
-            HStack(spacing: scaled(3)) {
-                Image(systemName: "eye.slash")
-                Text("\(model.trackingPixels)")
-            }
-            .foregroundStyle(Palette.muted)
-            .help(L("Tracking pixels removed from this conversation: they are never loaded"))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
-            .uiTarget("reader-pixels")
-        }
-        // Unsubscribe (`ui.md`, "Désabonnement"): once done, what it says
-        // ("unsubscribed on …") is information, with the rest of it; until
-        // then, a framed button as the commands of a reply (`FramedButton`):
-        // its key in the accent color, then its word.
-        if let offer = model.unsubscribeOffer, let at = offer.senderUnsubscribedAt {
-            Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
-        }
-        if let offer = model.unsubscribeOffer, offer.senderUnsubscribedAt == nil {
-            let key = controller.keyLabel(.mailUnsubscribe)
-            let label = UnsubscribeDisplay.label(offer, key: key)
-            FramedButton(help: label.help, accessibility: label.text, action: { model.unsubscribe() }) {
+    private func titleControls(_ actions: [ReaderTitleAction], _ state: ThreadDisplay.State) -> some View {
+        ForEach(actions) { action in
+            switch action {
+            case .folderName:
+                // In "Everything", the folder of the mail (and its account
+                // in "all"): the list mixes every folder.
+                if let label = model.selectedThreadFolderLabel {
+                    Text(label).foregroundStyle(Palette.muted).lineLimit(1)
+                        .uiTarget("reader-folder")
+                }
+            case .showAll:
+                Text("T").foregroundStyle(Palette.accentText)
+                    .uiTarget("reader-show-all")
+            case .pixels:
+                // Tracking pixels the core removed (`ui.md`, "Images
+                // distantes"): shown in every display, they are never
+                // loaded. An eye struck out and the number, shorter than a
+                // sentence on a line that holds the subject; the tooltip and
+                // VoiceOver say what it is.
                 HStack(spacing: scaled(3)) {
-                    Text(key).foregroundStyle(Palette.accentText)
-                    Text(label.text).foregroundStyle(Palette.muted)
-                    // A link found in the text, not the sender's header:
-                    // the browser opens.
-                    if let symbol = label.symbol { Image(systemName: symbol).foregroundStyle(Palette.muted) }
+                    Image(systemName: "eye.slash")
+                    Text("\(model.trackingPixels)")
+                }
+                .foregroundStyle(Palette.muted)
+                .help(L("Tracking pixels removed from this conversation: they are never loaded"))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("pixels blocked: %lld", model.trackingPixels))
+                .uiTarget("reader-pixels")
+            case .unsubscribed:
+                // Unsubscribe done (`ui.md`, "Désabonnement"): what it says
+                // ("unsubscribed on …") is information, with the rest of it.
+                if let offer = model.unsubscribeOffer, let at = offer.senderUnsubscribedAt {
+                    Text(UnsubscribeDisplay.done(at)).foregroundStyle(Palette.muted)
+                        .uiTarget("reader-unsubscribed")
+                }
+            case .replyAll:
+                titleIconButton(symbol: "arrowshape.turn.up.left.2",
+                                help: L("Reply to all (%@)", controller.keyLabel(.composeReplyAll)),
+                                accessibility: L("reply to all"),
+                                target: "reader-reply-all") { controller.startReply() }
+            case .replySender:
+                titleIconButton(symbol: "arrowshape.turn.up.left",
+                                help: L("Reply to the sender only (%@)", controller.keyLabel(.composeReplySender)),
+                                accessibility: L("reply to the sender only"),
+                                target: "reader-reply-sender") { controller.startReply(kind: .replySender) }
+            case .forward:
+                titleIconButton(symbol: "arrowshape.turn.up.right",
+                                help: L("Forward (%@)", controller.keyLabel(.composeForward)),
+                                accessibility: L("forward"),
+                                target: "reader-forward") { controller.startReply(kind: .forward) }
+            case .unsubscribe:
+                // Unsubscribe (`ui.md`, "Désabonnement"): a framed button as
+                // the commands of a reply (`FramedButton`): its key in the
+                // accent color, then its word.
+                if let offer = model.unsubscribeOffer, offer.senderUnsubscribedAt == nil {
+                    let key = controller.keyLabel(.mailUnsubscribe)
+                    let label = UnsubscribeDisplay.label(offer, key: key)
+                    FramedButton(help: label.help, accessibility: label.text, action: { model.unsubscribe() }) {
+                        HStack(spacing: scaled(3)) {
+                            // No key on the button: it stays in the tooltip.
+                            Text(label.text).foregroundStyle(Palette.muted)
+                            // A link found in the text, not the sender's header:
+                            // the browser opens.
+                            if let symbol = label.symbol { Image(systemName: symbol).foregroundStyle(Palette.muted) }
+                        }
+                    }
+                    .uiTarget("reader-unsubscribe")
+                }
+            case .flag:
+                // The flag of the mail shown, on or off (`ui.md`, "Boutons de
+                // l'en-tête"): filled and orange while flagged; a click flags
+                // or unflags this mail alone, whatever rows are marked.
+                if let thread = model.threads.first(where: { $0.id == model.openThread?.id }) {
+                    let key = controller.keyLabel(.mailToggleFlag)
+                    let flagged = thread.isFlagged
+                    FramedButton(help: flagged ? L("Remove the flag of this mail (%@)", key) : L("Flag this mail (%@)", key),
+                                 accessibility: L("flag"),
+                                 selected: flagged, action: { model.toggleFlag(of: thread.id) }) {
+                        // The symbol alone, in the height of a line of text:
+                        // no key and no word on the button, they are in the
+                        // tooltip; the filled flag says it is on, as a toggle
+                        // of macOS does.
+                        Image(systemName: flagged ? "flag.fill" : "flag")
+                            .frame(height: scaled(15))
+                            .foregroundStyle(Look.ink(flagged ? Palette.flag : Palette.muted, selected: flagged))
+                    }
+                    .uiTarget("reader-flag")
+                }
+            case .textOrHtml:
+                if model.latestReceived?.bodyHtml != nil {
+                    // The text | html | images switch (`ui.md`); also `vh`
+                    // and `vi`. Each word is clicked on its own; "images"
+                    // only when the thread has remote images. One frame, as
+                    // a segmented control (`FramedSegments`), the height of
+                    // the buttons.
+                    FramedSegments(segments: formatSegments, current: model.bodyFormat) { model.setBodyFormat($0) }
                 }
             }
-            .uiTarget("reader-unsubscribe")
         }
-        // The flag of the mail shown, on or off (`ui.md`, "Boutons de
-        // l'en-tête"): filled and orange while flagged; a click flags or
-        // unflags this mail alone, whatever rows are marked.
-        if let thread = model.threads.first(where: { $0.id == model.openThread?.id }) {
-            let key = controller.keyLabel(.mailToggleFlag)
-            let flagged = thread.isFlagged
-            FramedButton(help: flagged ? L("Remove the flag of this mail (%@)", key) : L("Flag this mail (%@)", key),
-                         accessibility: L("flag"),
-                         selected: flagged, action: { model.toggleFlag(of: thread.id) }) {
-                HStack(spacing: scaled(3)) {
-                    Text(key).foregroundStyle(Look.ink(Palette.accentText, selected: flagged))
-                    Image(systemName: flagged ? "flag.fill" : "flag")
-                        .foregroundStyle(Look.ink(flagged ? Palette.flag : Palette.muted, selected: flagged))
-                    // One word in both states, as a toggle of macOS: the
-                    // fill and the filled flag say it is on.
-                    Text(L("flag")).foregroundStyle(Look.ink(Palette.muted, selected: flagged))
-                }
-            }
-            .uiTarget("reader-flag")
+    }
+
+    /// An action of the title line drawn as its symbol alone: the key is in
+    /// the tooltip, not on the button (`reader.title_actions`).
+    private func titleIconButton(symbol: String, help: String, accessibility: String,
+                                 target: String, action: @escaping () -> Void) -> some View {
+        FramedButton(help: help, accessibility: accessibility, action: action) {
+            // The symbol in the height of a line of text, so the button is
+            // as high as the others of the line (title_button_heights):
+            // 15 pt of content for a 12 pt text, plus the padding.
+            Image(systemName: symbol).frame(height: scaled(15)).foregroundStyle(Palette.muted)
         }
-        if model.latestReceived?.bodyHtml != nil {
-            // The text | html | images switch (`ui.md`); also `vh` and
-            // `vi`. Each word is clicked on its own; "images" only when
-            // the thread has remote images. One frame, as a segmented
-            // control (`FramedSegments`), the height of the buttons.
-            FramedSegments(segments: formatSegments, current: model.bodyFormat) { model.setBodyFormat($0) }
-        }
+        .uiTarget(target)
     }
 
     /// The words of the text | html | images switch, with their tooltips;
@@ -2684,6 +2747,17 @@ struct KeyMenu: View {
     /// menu that only informs.
     var onHover: ((Int, Bool) -> Void)? = nil
 
+    /// The height the panel may take, in points: the caller sets it to the
+    /// window's content height (`menusAndPickers`). In a window too short
+    /// for every row, the rows scroll inside the panel, capped at
+    /// `available`, instead of the panel growing past the window, which
+    /// pushed the status bar out of sight. `.infinity` (the panel of a
+    /// question, `ChoicePanel`): no limit.
+    var available: CGFloat = .infinity
+
+    /// The panel's vertical padding, inside its chrome.
+    private var verticalPadding: CGFloat { 10 + Look.popupExtra / 2 }
+
     /// Whether a row's detail is drawn as a badge: a count (not an
     /// information, `detailMuted`) next to a key on the right
     /// (`layout.menu_keys = "right"`: clean, regular). With the key first
@@ -2704,6 +2778,49 @@ struct KeyMenu: View {
     static let keyGapAfterBadge: CGFloat = 8
 
     var body: some View {
+        // The rows as they are when they fit, in a scroll view capped at
+        // `available` when the window is too short for every row: the menu
+        // then scrolls inside the window instead of growing past it, which
+        // pushed the status bar out of sight; the arrows bring the
+        // highlighted row into view.
+        // Swift note: `ViewThatFits` shows the first of its views that fits
+        // in the height offered (capped below); a `ScrollView` is flexible,
+        // it would take all the height offered and leave the rows at its
+        // top. `ScrollViewReader`'s proxy scrolls to a row's `id`;
+        // `.fixedSize(horizontal: true, vertical: false)` keeps the panel
+        // as wide as its widest row, not as wide as the window.
+        ScrollViewReader { proxy in
+            ViewThatFits(in: .vertical) {
+                rows
+                ScrollView {
+                    rows
+                        .onChange(of: highlighted) { _, h in if let h { proxy.scrollTo(h) } }
+                }
+                .scrollIndicators(Look.scrollIndicators)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxHeight: max(available - 2 * verticalPadding, 120 * TextSize.shared.scale))
+        }
+        .padding(.vertical, verticalPadding)
+        .padding(.horizontal, Look.roundedPanels ? 6 : 10)
+        .popupChrome()
+        // Hug the rows vertically, as the plain VStack did: the scroll view
+        // and its reader are flexible, they would fill the height offered
+        // and leave the rows at the top of a panel as tall as the window.
+        .fixedSize(horizontal: true, vertical: true)
+        .uiTarget("menu-panel")
+    }
+
+    /// A copy of the menu whose panel is capped at `height` points
+    /// (`available`).
+    func capped(at height: CGFloat) -> KeyMenu {
+        var copy = self
+        copy.available = height
+        return copy
+    }
+
+    /// The rows of the menu: the title, then one line per entry.
+    @ViewBuilder private var rows: some View {
         // Width of the key column: the longest key, measured in the
         // interface font (in characters, in a font of fixed pitch).
         let measure = TextMeasure.interface(12 * TextSize.shared.scale)
@@ -2793,6 +2910,9 @@ struct KeyMenu: View {
                 .onHover { inside in onHover?(i, inside) }
                 .onTapGesture { onSelect?(i) }
                 .uiTarget("menu-\(i)")
+                // The id `scrollTo` uses to bring the row into view when the
+                // menu scrolls (`body`).
+                .id(i)
                 // A blank line between blocks (folders to deal with, filed,
                 // sent, thrown away; screens).
                 .padding(.top, e.gapBefore ? scaled(10) : 0)
@@ -2801,11 +2921,6 @@ struct KeyMenu: View {
         // As wide as its longest row, not as the window: the rows' spacers
         // (which make the whole row clickable) would stretch it otherwise.
         .fixedSize(horizontal: true, vertical: false)
-        // The highlight of a row runs close to the edges of a rounded
-        // panel, as in a macOS menu; its text keeps its room inside.
-        .padding(.vertical, 10 + Look.popupExtra / 2)
-        .padding(.horizontal, Look.roundedPanels ? 6 : 10)
-        .popupChrome()
     }
 }
 

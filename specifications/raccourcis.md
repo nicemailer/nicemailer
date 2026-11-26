@@ -143,6 +143,7 @@ Ce tableau est l'inventaire des touches d'aujourd'hui. Il devient les valeurs pa
 | `shift-space` `ctrl-b` | `reader.page_up` | page précédente du mail |
 | `T` | `reader.toggle_all` | citations, signatures, mails repliés |
 | `S` | `reader.skip_quoted` | aller au texte après la citation suivante |
+| `h` | `view.toggle_html` | texte / HTML du mail affiché (aussi `v` `h`) |
 | `l` | `picker.links` | liens du mail |
 | `ctrl-c` | `sender.card_or_copy` | fiche Contacts, ou adresse copiée |
 | `ctrl-shift-c` | `sender.mails` | mails de l'expéditeur |
@@ -151,7 +152,7 @@ Ce tableau est l'inventaire des touches d'aujourd'hui. Il devient les valeurs pa
 | `backspace` `del` | `mail.delete` | supprimer |
 | `u` | `mail.toggle_seen` | lu / non lu |
 | `U` | `mail.mark_seen` | marquer lu |
-| `*` | `mail.toggle_flag` | drapeau |
+| `I` | `mail.toggle_flag` | drapeau |
 | `t` | `picker.tag` | ajouter / retirer un tag |
 | `g` | `picker.group` | ajouter / retirer un groupe |
 | `s` | `menu.save` | menu d'enregistrement |
@@ -242,8 +243,8 @@ Menus fournis :
   - les écrans : `c` `goto.contacts`, `T` `goto.tags`, `g` `goto.groups`, `h` `goto.history`.
 
   Le menu garde ses blocs (`ui.md`). Un dossier absent de la vue n'apparaît pas. La colonne des dossiers affiche la touche de `goto.<rôle>`.
-- **`menu.save`** : `c` `save.clipboard`, `e` `save.eml`, `t` `save.text`, `T` `save.text_open`, `m` `save.markdown`, `M` `save.markdown_open`, `a` `save.attachments`, `g` `save.attachments_no_graphics`, `p` `save.pdf`, `P` `save.pdf_open`, `i` `save.pdf_evidence`, `I` `save.pdf_evidence_open`. Une action et sa variante `_open` forment une ligne : la variante est le `menu.choose_alt` de la ligne, et sa touche s'affiche à droite (« T : et ouvrir »).
-- **`menu.view`**, en quatre blocs séparés par un espace (novembre 2026) : le mail affiché, `h` `view.toggle_html`, `i` `view.toggle_remote_images` ; les colonnes, `1` `view.one_column`, `2` `view.two_columns`, `3` `view.three_columns` ; la présentation, `t` `view.choose_theme` (le sélecteur des thèmes, `themes.md`, section 9), `l` `view.toggle_list_layout` (la liste sur une ligne par mail, en colonnes, ou sur trois, `ui.md`, « Liste »), `s` `view.cycle_status_bar` ; le tri, `c` `view.sort_received`, `m` `view.sort_modified`. Le bloc est celui de l'action, pas de sa place : un `keymap.toml` qui réordonne le menu garde un espace là où le bloc change.
+- **`menu.save`** : `c` `save.clipboard`, `e` `save.eml`, `t` `save.text`, `T` `save.text_open`, `m` `save.markdown`, `M` `save.markdown_open`, `a` `save.attachments`, `g` `save.attachments_no_graphics`, `p` `save.pdf`, `P` `save.pdf_open`, `i` `save.pdf_evidence`, `I` `save.pdf_evidence_open`. Une action et sa variante `_open` forment une ligne : la variante est le `menu.choose_alt` de la ligne, et sa touche s'affiche à droite (« T : et ouvrir »). Chaque ligne commence par une majuscule (« Dans le presse-papiers », « En PDF » ; novembre 2026, `ui.md`).
+- **`menu.view`**, en quatre blocs séparés par un espace (novembre 2026) : le mail affiché, `h` `view.toggle_html`, `i` `view.toggle_remote_images` ; les colonnes, `1` `view.one_column`, `2` `view.two_columns`, `3` `view.three_columns` ; la présentation, `t` `view.choose_theme` (le sélecteur des thèmes, `themes.md`, section 9), `l` `view.toggle_list_layout` (la liste sur une ligne par mail, en colonnes, ou sur trois, `ui.md`, « Liste »), `s` `view.cycle_status_bar`, `r` `view.reset_columns_width` (remettre la largeur standard de la colonne de liste : un tiers en liste trois lignes, la moitié en une ligne ; la ligne n'apparaît que si la largeur actuelle est différente de cette largeur standard, choisir la ligne ne changerait rien sinon) ; le tri, `c` `view.sort_received`, `m` `view.sort_modified`. Le bloc est celui de l'action, pas de sa place : un `keymap.toml` qui réordonne le menu garde un espace là où le bloc change. Comme dans `menu.save`, chaque ligne de `menu.view` commence par une majuscule (« Texte / HTML », « Thème… » ; novembre 2026, `ui.md`) ; l'aide garde la minuscule.
 
 Les actions `move.*` et `goto.*` peuvent aussi être liées directement, hors menu : `I = "goto.inbox"` dans `[mail]`.
 

@@ -1044,6 +1044,7 @@ final class InterfaceController {
         case .viewToggleHtml: model.toggleBodyFormat()
         case .viewToggleRemoteImages: model.toggleRemoteImages()
         case .viewCycleStatusBar: cycleStatusBar()
+        case .viewResetColumnsWidth: resetColumnsWidth()
         case .viewChooseTheme: openPicker(.themes)
         case .viewToggleListLayout:
             listLayout = listLayout.toggled
@@ -1406,6 +1407,13 @@ final class InterfaceController {
             var block: Int?
             return rows.compactMap { row -> Entry? in
                 guard let action = KeyAction(rawValue: row.action) else { return nil }
+                // The reset of the columns width is offered only when the
+                // width is not the standard one: the row would change
+                // nothing (`ui.md`, menu `v`; `ListLayout.standardFraction`).
+                // The reset stores exactly `standardFraction` and
+                // `UserDefaults` keeps the double, so the comparison is
+                // exact, no epsilon.
+                if action == .viewResetColumnsWidth, listFraction == listLayout.standardFraction { return nil }
                 if action.isOpenVariant, let base = KeyAction(rawValue: String(row.action.dropLast(5))),
                    actions.contains(base.rawValue) {
                     return nil
@@ -1440,6 +1448,12 @@ final class InterfaceController {
     func label(of action: KeyAction) -> String {
         if let role = action.moveRole ?? action.gotoRole { return model.folderNames.name(role) }
         if let v = action.gotoVirtual { return model.folderNames.name(of: v) }
+        // The rows of the Show and Save menus start with a capital, as the
+        // blocks of the bar do ("Filter", "Show"…): "Text / HTML",
+        // "As PDF" (`ThreadFilter.capitalizedFirst`).
+        if action.rawValue.hasPrefix("view.") || action.rawValue.hasPrefix("save.") {
+            return ThreadFilter.capitalizedFirst(action.label)
+        }
         return action.label
     }
 
@@ -1459,6 +1473,13 @@ final class InterfaceController {
     private func cycleStatusBar() {
         let all = StatusPosition.allCases
         statusPosition = all[(all.firstIndex(of: statusPosition)! + 1) % all.count]
+    }
+
+    /// `v` `r` (`view.reset_columns_width`): the list column back to its
+    /// standard width for the presentation shown (`ListLayout.standardFraction`),
+    /// whatever width the separator was dragged to.
+    private func resetColumnsWidth() {
+        listFraction = listLayout.standardFraction
     }
 
     /// A folder of the current view: a real folder of the account, or in

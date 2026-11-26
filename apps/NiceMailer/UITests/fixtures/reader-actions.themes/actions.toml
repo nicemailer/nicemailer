@@ -1,0 +1,8 @@
+# A theme like geek whose reader's title line keeps only the flag and the
+# forward, in this order (reader-actions.uiscript): every other control is
+# hidden, its key still works.
+version = 1
+extends = "geek"
+
+[reader]
+title_actions = ["flag", "forward"]

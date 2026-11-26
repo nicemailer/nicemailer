@@ -3136,6 +3136,11 @@ pub struct ThemeReader {
     /// The smallest text of a mail in HTML, in points for a 12 pt text,
     /// grown with the text size as the whole page is; 0: no minimum.
     pub html_min_font_size: u32,
+    /// The controls of the reader's title line, in order
+    /// (`reader.title_actions`): `folder_name`, `show_all`, `pixels`,
+    /// `unsubscribed`, `reply_all`, `reply_sender`, `forward`, `unsubscribe`,
+    /// `flag`, `text_or_html`.
+    pub title_actions: Vec<String>,
 }
 
 /// `[motion]` of a theme (section 6.4), in milliseconds.
@@ -3746,10 +3751,11 @@ pub struct AccountSync {
     /// file's, else the one detected; `None`: every verdict is `unknown`
     /// (`authentification-expediteur.md`).
     pub authserv_id: Option<String>,
-    /// Bodies refused this run: their size differs from what the server
-    /// announced (`stockage-brut.md`, section 5, step 2). Tried again at
-    /// the next start of the core.
-    pub bodies_refused: u64,
+    /// Bodies stored since the core started whose size differs from the
+    /// `RFC822.SIZE` the server announced (`stockage-brut.md`, section 5,
+    /// step 2). Exchange Online does it for most mail: a count, not an
+    /// error.
+    pub bodies_size_differs: u64,
     pub folders: Vec<FolderSync>,
 }
 

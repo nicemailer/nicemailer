@@ -278,7 +278,7 @@ struct InterfaceControllerTests {
         #expect(read)
         #expect(await eventually { core.calls("set_thread_seen").count == 1 })
         #expect(Set(core.calls("set_thread_seen")[0]["thread_ids"] as? [Int] ?? []).isSubset(of: ids))
-        press("*")
+        press("I")
         let flagged = model.threads.filter { ids.contains($0.id) }.allSatisfy { $0.isFlagged }
         #expect(flagged)
         #expect(await eventually { core.calls("set_thread_flagged").count == 1 })
@@ -316,7 +316,7 @@ struct InterfaceControllerTests {
     }
 
     @Test func readAndFlagToggles() async {
-        press("*")
+        press("I")
         #expect(await eventually { core.calls("set_thread_flagged").first?["flagged"] as? Bool == true })
         // Shown at once, before the core answers.
         #expect(model.selectedThread?.isFlagged == true)
@@ -1386,8 +1386,22 @@ struct InterfaceControllerTests {
     /// block but the first.
     @Test func theDisplayMenuIsInFourBlocks() {
         let rows = controller.menuEntries(.view)
-        #expect(rows.map(\.key) == ["h", "i", "1", "2", "3", "t", "l", "s", "c", "m"])
+        #expect(rows.map(\.key) == ["h", "i", "1", "2", "3", "t", "l", "s", "r", "c", "m"])
         #expect(rows.filter(\.gapBefore).map(\.key) == ["1", "t", "c"])
+    }
+
+    @Test func theShowAndSaveMenusStartEachRowWithACapital() {
+        // "Text / HTML", "As PDF"…: the rows of the Show and Save menus are
+        // capitalized, the help keeps the label as it is (`KeyAction.label`).
+        let C = ThreadFilter.capitalizedFirst
+        let view = controller.menuEntries(.view)
+        #expect(view.first { $0.key == "h" }?.label == C(L("text / HTML")))
+        #expect(view.first { $0.key == "1" }?.label == C(L("one column")))
+        #expect(view.first { $0.key == "s" }?.label == C(L("status bar: bottom, top, hidden")))
+        let save = controller.menuEntries(.save)
+        #expect(save.first { $0.key == "p" }?.label == C(L("as PDF")))
+        #expect(save.first { $0.key == "c" }?.label == C(L("to clipboard")))
+        #expect(KeyAction.viewToggleHtml.label == L("text / HTML"))
     }
 
     @Test func theDisplayMenuKeepsItsBlocksInTheOrderOfKeymapToml() {
@@ -1396,6 +1410,7 @@ struct InterfaceControllerTests {
         #expect(KeyAction.viewSortReceived.viewBlock == KeyAction.viewSortModified.viewBlock)
         #expect(KeyAction.viewToggleHtml.viewBlock != KeyAction.viewOneColumn.viewBlock)
         #expect(KeyAction.viewChooseTheme.viewBlock == KeyAction.viewCycleStatusBar.viewBlock)
+        #expect(KeyAction.viewResetColumnsWidth.viewBlock == KeyAction.viewCycleStatusBar.viewBlock)
         #expect(KeyAction.mailToggleFlag.viewBlock == nil)
     }
 
@@ -1781,7 +1796,7 @@ struct InterfaceControllerTests {
         model.openFile = { opened.append($0.path) }
         // The last row of the menu.
         #expect(controller.menuEntries(.save).last?.key == "i")
-        #expect(controller.menuEntries(.save).last?.label == L("as PDF with technical information"))
+        #expect(controller.menuEntries(.save).last?.label == ThreadFilter.capitalizedFirst(L("as PDF with technical information")))
         press("s"); press("i")
         let path = dir.appendingPathComponent("2020-06-23 Subject 1.pdf").path
         #expect(await eventually { saved(dir) == ["2020-06-23 Subject 1.pdf"] })
@@ -2051,7 +2066,7 @@ struct InterfaceControllerTests {
 
     @Test func scCopiesTheTextOfTheMailUnderTheCursor() async {
         let rows = controller.menuEntries(.save)
-        #expect(rows.first?.key == "c" && rows.first?.label == L("to clipboard"))
+        #expect(rows.first?.key == "c" && rows.first?.label == ThreadFilter.capitalizedFirst(L("to clipboard")))
         press("s"); press("c")
         #expect(await eventually { controller.pasteboard.string(forType: .string) != nil })
         #expect(core.calls("message_text").map { $0["message_id"] as? Int } == [10])

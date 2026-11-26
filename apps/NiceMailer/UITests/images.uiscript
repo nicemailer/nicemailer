@@ -12,6 +12,10 @@ expect selected_subject = La lettre de novembre
 expect images_offered = true
 expect tracking_pixels = 1
 expect body_format = text
+# The controls of the title line, in the theme's order (reader.title_actions):
+# the blocked pixel, the three actions, the unsubscribe the newsletter
+# offers, the flag, the switch.
+expect reader_actions = pixels,reply_all,reply_sender,forward,unsubscribe,flag,text_or_html
 # The text view leaves out what the mail hides: its preview text, meant
 # for the list of mails (html_text.rs), is not in the body.
 expect reader_text ~ Novembre
@@ -20,10 +24,11 @@ snap switch
 # The title line (subject, unsubscribe, blocked pixels, flag, switch): one
 # line while the whole subject fits beside the controls, two in a narrow
 # window. A bigger text makes the line longer: the choice follows (⌘+,
-# then ⌘0). 900 pt: the controls in their frames, the flag among them, take
-# more room than the words alone did (760 until November 2026).
+# then ⌘0). 1100 pt: the controls in their frames, the three action buttons,
+# the flag among them, take more room than the words alone did (760 until
+# November 2026, 900 before the action buttons).
 expect title_lines = 1
-resize 900x800
+resize 1100x800
 expect title_lines = 1
 key cmd-=
 key cmd-=
@@ -34,6 +39,21 @@ key cmd-0
 expect title_lines = 1
 resize 1400x900
 expect title_lines = 1
+# The action buttons, drawn as their symbol alone: a click opens the reply
+# to all, the forward, the reply to the sender alone; Escape comes back to
+# the mail, the draft kept.
+click reader:reply-all
+expect composing = true
+key esc
+expect composing = false
+click reader:forward
+expect composing = true
+key esc
+expect composing = false
+click reader:reply-sender
+expect composing = true
+key esc
+expect composing = false
 # HTML: the page, without its images; nothing is asked.
 click format:html
 expect body_format = html
@@ -108,8 +128,7 @@ key k
 expect selected_subject = La lettre de novembre
 expect body_format = html
 expect remote_allowed = 0
-# vh: text.
-key v
+# h: text (v h does the same).
 key h
 expect body_format = text
 wait 300
