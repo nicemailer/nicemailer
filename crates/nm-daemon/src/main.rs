@@ -1168,6 +1168,22 @@ async fn serve(core: Arc<Core>, stream: UnixStream, verified: Option<Source>, de
     Ok(())
 }
 
+/// The source of a connection after its `hello`: the verified signature
+/// when there is one, whatever the client declares (`architecture.md`,
+/// section 9); else, in a relaxed build only, what it declares.
+fn hello_source(verified: bool, current: Source, declared: Option<&str>) -> Source {
+    if verified {
+        return current;
+    }
+    match declared {
+        Some("app") => Source::App,
+        Some("tui") => Source::Tui,
+        Some("mcp") => Source::Mcp,
+        Some("web") => Source::Web,
+        _ => Source::Cli,
+    }
+}
+
 /// Reads one line from a client's socket, at most `max` bytes: `Ok(None)`
 /// when the client closed the connection, an error when the line is longer
 /// — one line cannot make the core's memory grow without bound
@@ -1803,16 +1819,7 @@ fn session_call(core: &Arc<Core>, session: &mut Session, req: &Request) -> Optio
             // The identity comes from the client's code signature, never
             // from what it declares (`architecture.md`, section 9); only a
             // debug build, which verifies nothing, takes it from `hello`.
-            if !session.identity_verified {
-                let source = match p.client.as_deref() {
-                    Some("app") => Source::App,
-                    Some("tui") => Source::Tui,
-                    Some("mcp") => Source::Mcp,
-                    Some("web") => Source::Web,
-                    _ => Source::Cli,
-                };
-                session.source = source;
-            }
+            session.source = hello_source(session.identity_verified, session.source, p.client.as_deref());
             // In maintenance, only the app is let in, to prepare or cancel
             // the update (`update.rs`); every other request of it is
             // refused by `call`. The others get the maintenance's error,
@@ -2743,6 +2750,20 @@ mod tests {
         drop(l);
         assert!(path.exists(), "dropping the listener leaves the file");
         assert!(bind(&path).is_ok());
+    }
+
+    /// A verified client stays what its signature says, whatever it
+    /// declares in `hello`; an unverified one (relaxed build) is what it
+    /// declares, the CLI by default.
+    #[test]
+    fn the_signature_wins_over_what_hello_declares() {
+        assert_eq!(hello_source(true, Source::Cli, Some("app")), Source::Cli);
+        assert_eq!(hello_source(true, Source::Mcp, Some("app")), Source::Mcp);
+        assert_eq!(hello_source(true, Source::App, Some("cli")), Source::App);
+        assert_eq!(hello_source(false, Source::Cli, Some("app")), Source::App);
+        assert_eq!(hello_source(false, Source::Cli, Some("mcp")), Source::Mcp);
+        assert_eq!(hello_source(false, Source::Cli, Some("anything")), Source::Cli);
+        assert_eq!(hello_source(false, Source::Cli, None), Source::Cli);
     }
 
     /// The line of the start: the total, then each step in its order.
