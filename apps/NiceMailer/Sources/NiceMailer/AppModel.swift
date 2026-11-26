@@ -93,9 +93,9 @@ final class AppModel {
     /// Error shown in an alert; the view sets it back to nil when dismissed.
     var lastError: String?
     /// Directory where `export` writes, passed to the core; `nil` lets the
-    /// core choose ~/Downloads. Set by `NICEMAILER_EXPORT_DIR` (tests must
-    /// never write into the user's Downloads).
-    var exportDirectory: String? = ProcessInfo.processInfo.environment["NICEMAILER_EXPORT_DIR"]
+    /// core choose ~/Downloads. Set by `NICEMAILER_EXPORT_DIR` in a debug
+    /// build (tests must never write into the user's Downloads).
+    var exportDirectory: String? = DevEnvironment.value("NICEMAILER_EXPORT_DIR")
     /// Opens a file with its default app, which comes to the front. Replaced
     /// in UI script mode and in unit tests, which must never launch Preview
     /// or Word on the user's screen.

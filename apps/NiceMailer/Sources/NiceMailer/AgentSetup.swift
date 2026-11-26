@@ -39,7 +39,7 @@ struct AgentSetup {
         if Bundle.main.bundleURL.pathExtension == "app", FileManager.default.isExecutableFile(atPath: bundled.path) {
             return AgentSetup(helper: bundled, desktopConfig: config)
         }
-        if let path = ProcessInfo.processInfo.environment["NICEMAILER_MCP"], !path.isEmpty,
+        if let path = DevEnvironment.value("NICEMAILER_MCP"),
            FileManager.default.isExecutableFile(atPath: path) {
             return AgentSetup(helper: URL(fileURLWithPath: path), desktopConfig: config)
         }

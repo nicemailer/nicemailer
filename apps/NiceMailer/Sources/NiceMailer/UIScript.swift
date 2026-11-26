@@ -20,13 +20,14 @@ import SwiftUI
 /// gestures), which is what the script is meant to check.
 @MainActor
 enum UIScript {
-    /// The script file, if UI script mode is on.
+    /// The script file, if UI script mode is on: a debug build only
+    /// (`DevEnvironment`), never a release.
     /// Swift note: `nonisolated` lets any thread read these constants;
     /// the rest of the type is tied to the main thread (`@MainActor`).
-    nonisolated static let path: String? = ProcessInfo.processInfo.environment["NICEMAILER_UI_SCRIPT"]
+    nonisolated static let path: String? = DevEnvironment.value("NICEMAILER_UI_SCRIPT")
     nonisolated static var isActive: Bool { path != nil }
     /// Where results and snapshots go.
-    nonisolated static let outDir: URL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["NICEMAILER_UI_OUT"]
+    nonisolated static let outDir: URL = URL(fileURLWithPath: DevEnvironment.value("NICEMAILER_UI_OUT")
         ?? NSTemporaryDirectory() + "nicemailer-ui")
 
     /// Frames of the clickable rows, in window coordinates (bottom-left

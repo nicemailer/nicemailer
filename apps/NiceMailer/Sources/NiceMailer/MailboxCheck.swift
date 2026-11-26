@@ -93,7 +93,7 @@ struct CLIMailboxTool: MailboxTool {
     static func find() -> CLIMailboxTool? {
         let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/nicemailer")
         if FileManager.default.isExecutableFile(atPath: bundled.path) { return CLIMailboxTool(executable: bundled) }
-        if let path = ProcessInfo.processInfo.environment["NICEMAILER_CLI"], !path.isEmpty,
+        if let path = DevEnvironment.value("NICEMAILER_CLI"),
            FileManager.default.isExecutableFile(atPath: path) {
             return CLIMailboxTool(executable: URL(fileURLWithPath: path))
         }
