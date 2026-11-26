@@ -3463,46 +3463,100 @@ pub mod paths {
     /// 3. the default directory.
     pub fn data_dir() -> PathBuf {
         let default = default_data_dir();
-        let chosen = read_choice(&default);
+        let chosen = match choice(&default) {
+            Choice::Chosen(c) => Some(c),
+            Choice::Absent | Choice::Ignored(_) => None,
+        };
         resolve(std::env::var_os("NICEMAILER_DATA_DIR").map(PathBuf::from), chosen.as_deref(), default)
     }
 
-    /// The data directory chosen in the app, read from [`CHOICE_FILE`] in
-    /// `default` — only when that file is private to the current user: no
-    /// right for the group or the others, and owned by her. A file anyone
-    /// else could have written is ignored, like a missing or malformed one
-    /// (`architecture.md`, section 9): the core started by launchd follows
-    /// this file, and a forged one would point it at a mailbox of someone
-    /// else's choosing.
-    fn read_choice(default: &Path) -> Option<String> {
+    /// What [`CHOICE_FILE`] in the default directory says.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Choice {
+        /// No file: the default directory.
+        Absent,
+        /// A file that is not trusted, and why: the default directory, and
+        /// the core says so in its log.
+        Ignored(String),
+        /// The text of the file, trusted.
+        Chosen(String),
+    }
+
+    /// The choice of [`CHOICE_FILE`] in `default`, trusted only when no one
+    /// but the current user can have written it (`architecture.md`,
+    /// section 9): the core started by launchd follows this file, and one
+    /// written by another account would point it at a mailbox of that
+    /// account's choosing. So the file must be a regular file — never a
+    /// symbolic link, which is not followed — owned by the current user,
+    /// writable by her alone, and so must its directory. That others may
+    /// read it is harmless: it names a path, not a secret (and older
+    /// versions of the app wrote it `0644`).
+    ///
+    /// The file is opened first (`O_NOFOLLOW`), then checked on the open
+    /// file (`fstat`): checking the path and then reading it would leave a
+    /// moment when the file could be swapped in between.
+    ///
+    /// The protection is against other accounts of the Mac: a program of
+    /// the same user can write a file that passes, as it can do anything
+    /// the user can (`architecture.md`, section 9, "Menaces couvertes et
+    /// non couvertes").
+    pub fn choice(default: &Path) -> Choice {
+        use std::io::Read;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+        // The directory first: whoever can write in it can replace the file.
+        match std::fs::symlink_metadata(default) {
+            Ok(dir) if !dir.is_dir() => return Choice::Ignored(format!("{} is not a directory", default.display())),
+            Ok(dir) => {
+                if let Some(why) = untrusted(dir.uid(), dir.mode()) {
+                    return Choice::Ignored(format!("{}: {why}", default.display()));
+                }
+            }
+            Err(_) => return Choice::Absent,
+        }
         let path = default.join(CHOICE_FILE);
-        let meta = std::fs::metadata(&path).ok()?;
-        if !choice_is_private(&meta) {
-            return None;
+        // Rust note: `custom_flags` passes flags of `open(2)` that the
+        // portable API does not name; `O_NOFOLLOW` makes the open fail on a
+        // symbolic link instead of following it.
+        let mut file = match std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(&path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Choice::Absent,
+            Err(e) => return Choice::Ignored(format!("{}: {e}", path.display())),
+        };
+        // `metadata` on an open file is `fstat`: the file just opened.
+        let Ok(meta) = file.metadata() else { return Choice::Ignored(format!("{}: unreadable", path.display())) };
+        if !meta.is_file() {
+            return Choice::Ignored(format!("{} is not a regular file", path.display()));
         }
-        std::fs::read_to_string(path).ok()
+        if let Some(why) = untrusted(meta.uid(), meta.mode()) {
+            return Choice::Ignored(format!("{}: {why}", path.display()));
+        }
+        // One line, an absolute path: a few hundred bytes. More is not a
+        // choice the app wrote.
+        let mut text = String::new();
+        match (&mut file).take(MAX_CHOICE_BYTES + 1).read_to_string(&mut text) {
+            Ok(n) if n as u64 <= MAX_CHOICE_BYTES => Choice::Chosen(text),
+            Ok(_) => Choice::Ignored(format!("{}: longer than {MAX_CHOICE_BYTES} bytes", path.display())),
+            Err(e) => Choice::Ignored(format!("{}: {e}", path.display())),
+        }
     }
 
-    /// Whether `default`/`CHOICE_FILE` exists but is ignored because it is
-    /// not private to the current user, so that the core can say so in its
-    /// log instead of silently serving the default mailbox.
-    pub fn choice_ignored_for_rights(default: &Path) -> bool {
-        match std::fs::metadata(default.join(CHOICE_FILE)) {
-            Ok(meta) => !choice_is_private(&meta),
-            Err(_) => false,
-        }
-    }
+    /// The longest choice file read.
+    const MAX_CHOICE_BYTES: u64 = 4096;
 
-    /// The choice file must carry no right for the group or the others
-    /// (`mode & 0o077 == 0`) and belong to the effective user.
-    fn choice_is_private(meta: &std::fs::Metadata) -> bool {
-        use std::os::unix::fs::MetadataExt;
-        if meta.mode() & 0o077 != 0 {
-            return false;
-        }
+    /// Why a file or directory of owner `uid` and permissions `mode` could
+    /// have been written by someone else than the current user: owned by
+    /// another, or writable by the group or the others (`mode & 0o022`).
+    /// `None` when only the current user can write it.
+    pub fn untrusted(uid: u32, mode: u32) -> Option<&'static str> {
         // `geteuid` is a C call, hence `unsafe`; it has no precondition and
         // cannot fail.
-        meta.uid() == unsafe { libc::geteuid() }
+        if uid != unsafe { libc::geteuid() } {
+            return Some("owned by another user");
+        }
+        if mode & 0o022 != 0 {
+            return Some("writable by the group or the others");
+        }
+        None
     }
 
     /// The rule of [`data_dir`], as a pure function: the variable, else the
@@ -3537,26 +3591,67 @@ pub mod paths {
             assert_eq!(resolve(Some(PathBuf::new()), None, d.clone()), d);
         }
 
-        /// The choice file is followed only when it is private to the
-        /// current user: no group or other right, and her owner.
+        /// The choice file is followed only when no one but the current
+        /// user can have written it: `0644` (the app's own, readable) is
+        /// fine, writable by the group or the others is not.
         #[test]
-        fn the_choice_file_must_be_private_to_the_user() {
+        fn the_choice_file_must_be_writable_by_the_user_alone() {
             use std::os::unix::fs::PermissionsExt;
             let dir = tempfile::tempdir().unwrap();
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
             let file = dir.path().join(CHOICE_FILE);
-            std::fs::write(&file, "/tmp/elsewhere\n").unwrap();
-            // 0o644: the others may read it — ignored.
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
-            assert_eq!(read_choice(dir.path()), None);
-            assert!(choice_ignored_for_rights(dir.path()));
-            // 0o600, owned by the current user (the test runs as her): read.
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
-            assert_eq!(read_choice(dir.path()).as_deref(), Some("/tmp/elsewhere\n"));
-            assert!(!choice_ignored_for_rights(dir.path()));
             // Absent: nothing ignored, nothing read.
-            std::fs::remove_file(&file).unwrap();
-            assert_eq!(read_choice(dir.path()), None);
-            assert!(!choice_ignored_for_rights(dir.path()));
+            assert_eq!(choice(dir.path()), Choice::Absent);
+            std::fs::write(&file, "/tmp/elsewhere\n").unwrap();
+            for mode in [0o600, 0o644, 0o400] {
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+                assert_eq!(choice(dir.path()), Choice::Chosen("/tmp/elsewhere\n".into()), "{mode:o}");
+            }
+            for mode in [0o620, 0o602, 0o666] {
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+                assert!(matches!(choice(dir.path()), Choice::Ignored(_)), "{mode:o}");
+            }
+        }
+
+        /// A directory others can write in: whoever can replace the file.
+        #[test]
+        fn a_choice_in_a_directory_others_can_write_is_ignored() {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join(CHOICE_FILE), "/tmp/elsewhere").unwrap();
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+            assert!(matches!(choice(dir.path()), Choice::Ignored(why) if why.contains("writable")));
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(choice(dir.path()), Choice::Chosen("/tmp/elsewhere".into()));
+        }
+
+        /// A symbolic link is never followed, even towards a good file; a
+        /// directory, or a file too long, is not a choice.
+        #[test]
+        fn a_link_or_an_odd_file_is_not_a_choice() {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            let target = dir.path().join("target");
+            std::fs::write(&target, "/tmp/elsewhere").unwrap();
+            std::os::unix::fs::symlink(&target, dir.path().join(CHOICE_FILE)).unwrap();
+            assert!(matches!(choice(dir.path()), Choice::Ignored(_)));
+            std::fs::remove_file(dir.path().join(CHOICE_FILE)).unwrap();
+            std::fs::create_dir(dir.path().join(CHOICE_FILE)).unwrap();
+            assert!(matches!(choice(dir.path()), Choice::Ignored(_)));
+            std::fs::remove_dir(dir.path().join(CHOICE_FILE)).unwrap();
+            std::fs::write(dir.path().join(CHOICE_FILE), "/".repeat(5000)).unwrap();
+            assert!(matches!(choice(dir.path()), Choice::Ignored(why) if why.contains("longer")));
+        }
+
+        #[test]
+        fn only_the_user_writing_alone_is_trusted() {
+            let me = unsafe { libc::geteuid() };
+            assert_eq!(untrusted(me, 0o100644), None);
+            assert_eq!(untrusted(me, 0o40700), None);
+            assert!(untrusted(me, 0o100664).is_some());
+            assert!(untrusted(me, 0o100646).is_some());
+            assert!(untrusted(me + 1, 0o100600).is_some());
         }
     }
 

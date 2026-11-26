@@ -237,14 +237,13 @@ async fn main() -> anyhow::Result<()> {
     }
     // `--data-dir` (or the env variable) if given, otherwise the default.
     let data_dir = args.data_dir.clone().unwrap_or_else(nm_api::paths::data_dir);
-    // A choice file that is not private to the current user is ignored
-    // (`nm_api::paths`): say so, the user may wonder why the core serves
-    // the default mailbox (`architecture.md`, section 9).
-    if args.data_dir.is_none() && nm_api::paths::choice_ignored_for_rights(&nm_api::paths::default_data_dir()) {
-        eprintln!(
-            "{} : choix ignoré (fichier non privé à l'utilisateur courant), dossier par défaut servi",
-            nm_api::paths::default_data_dir().join(nm_api::paths::CHOICE_FILE).display()
-        );
+    // A choice file that someone else could have written is ignored
+    // (`nm_api::paths::choice`): say so, the user may wonder why the core
+    // serves the default mailbox (`architecture.md`, section 9).
+    if args.data_dir.is_none()
+        && let nm_api::paths::Choice::Ignored(why) = nm_api::paths::choice(&nm_api::paths::default_data_dir())
+    {
+        eprintln!("choix de boîte ignoré ({why}) : dossier par défaut servi");
     }
     fs::create_dir_all(&data_dir).with_context(|| format!("création de {}", data_dir.display()))?;
     // 0o700: only the current user can enter the directory (the `0o` prefix

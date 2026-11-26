@@ -20,6 +20,72 @@ struct DataDirectoryTests {
         #expect(DataDirectory.resolve(env: "", choice: nil, defaultPath: fallback) == fallback)
     }
 
+    /// A new private directory, standing for the default one.
+    func scratch() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nm-choice-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return dir
+    }
+
+    func mode(_ url: URL) throws -> Int {
+        try (FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue ?? -1
+    }
+
+    /// The choice is written `0600` and read back: the core reads it with
+    /// the same rule (`nm_api::paths::choice`). The app used to write it
+    /// `0644`, which the core of the branch ignored.
+    @Test func aChoiceIsWrittenPrivateAndReadBack() throws {
+        let dir = try scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try DataDirectory.choose(URL(fileURLWithPath: "/Users/me/Archive"), in: dir)
+        let file = dir.appendingPathComponent(DataDirectory.choiceName)
+        #expect(try mode(file) == 0o600)
+        #expect(DataDirectory.readChoice(in: dir) == "/Users/me/Archive\n")
+        // Chosen again: replaced, still private, no file left behind.
+        try DataDirectory.choose(URL(fileURLWithPath: "/Users/me/Other"), in: dir)
+        #expect(DataDirectory.readChoice(in: dir) == "/Users/me/Other\n")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == [DataDirectory.choiceName])
+        // The default directory itself: the choice is removed.
+        try DataDirectory.choose(dir, in: dir)
+        #expect(DataDirectory.readChoice(in: dir) == nil)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
+
+    /// A file others could have written is ignored, as the core ignores it;
+    /// one they can only read (`0644`, the old app's) is followed.
+    @Test func aChoiceOthersCouldWriteIsIgnored() throws {
+        let dir = try scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent(DataDirectory.choiceName)
+        try "/Users/me/Archive\n".write(to: file, atomically: false, encoding: .utf8)
+        for (mode, followed) in [(0o644, true), (0o600, true), (0o664, false), (0o666, false), (0o602, false)] {
+            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: file.path)
+            #expect((DataDirectory.readChoice(in: dir) != nil) == followed, "mode \(String(mode, radix: 8))")
+        }
+        // A directory others can write in: whoever can replace the file.
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: dir.path)
+        #expect(DataDirectory.readChoice(in: dir) == nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        #expect(DataDirectory.readChoice(in: dir) != nil)
+    }
+
+    /// A symbolic link is never followed, even towards a good file.
+    @Test func aLinkIsNotAChoice() throws {
+        let dir = try scratch()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let target = dir.appendingPathComponent("target")
+        try "/Users/me/Archive\n".write(to: target, atomically: false, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: dir.appendingPathComponent(DataDirectory.choiceName), withDestinationURL: target)
+        #expect(DataDirectory.readChoice(in: dir) == nil)
+    }
+
+    @Test func onlyTheUserWritingAloneIsTrusted() {
+        #expect(DataDirectory.untrusted(owner: 501, mode: 0o100644, user: 501) == nil)
+        #expect(DataDirectory.untrusted(owner: 501, mode: 0o100664, user: 501) != nil)
+        #expect(DataDirectory.untrusted(owner: 502, mode: 0o100600, user: 501) != nil)
+    }
+
     @Test func theNameShownIsTheFoldersOwn() {
         #expect(DataDirectory.displayName(URL(fileURLWithPath: "/Users/me/Library/Application Support/NiceMailer-archive")) == "NiceMailer-archive")
     }
