@@ -1427,9 +1427,7 @@ async fn oauth_signed_in_again(core: &Arc<Core>, key: &str, flow: &str) -> Resul
 /// flow ends with the `OAuthFinished` event. Entered in the app or the CLI
 /// only, like a password: an agent must not trigger a browser sign-in.
 async fn oauth_begin(core: &Arc<Core>, p: nm_api::OauthBeginParams, source: Source) -> Result<nm_api::OauthBeginResult, RpcError> {
-    if !matches!(source, Source::App | Source::Cli | Source::Tui) {
-        return Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE));
-    }
+    rights::human(source)?;
     let (email, account) = match (p.email, p.account) {
         (Some(email), None) => (email, None),
         (None, Some(key)) => {
@@ -1465,10 +1463,8 @@ async fn set_password(core: &Arc<Core>, p: SetPasswordParams, source: Source) ->
     // `configuration.md`, section 6: the secret is entered in the app or
     // the CLI only. An agent (MCP) or the web server must not be able to
     // bind a password of its choosing to a server of its choosing. The
-    // source is declared by the client until its signature is checked.
-    if !matches!(source, Source::App | Source::Cli | Source::Tui) {
-        return Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE));
-    }
+    // source is the client's verified signature (`signing.rs`).
+    rights::human(source)?;
     if p.password.is_empty() {
         return Err(RpcError::new(error_code::INVALID_PARAMS, reason::PASSWORD_EMPTY));
     }

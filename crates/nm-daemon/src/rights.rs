@@ -70,10 +70,48 @@ pub(crate) const MCP_ALLOWED: &[&str] = &[
     method::DISCARD_DRAFT,
 ];
 
+/// The methods only a person's client calls (the app, the CLI, the TUI):
+/// entering a secret, setting up or removing an account, sending
+/// (`configuration.md`, section 6; `architecture.md`, section 9, "Droits
+/// par client"). An agent, or the web server, must not bind a password of
+/// its choosing to a server of its choosing, nor send.
+///
+/// The handlers check it too ([`human`]): the table is the rule, the call
+/// in the handler a second lock, should a method be routed another way.
+pub(crate) const PEOPLE_ONLY: &[&str] = &[
+    method::SET_PASSWORD,
+    method::OAUTH_BEGIN,
+    method::TEST_ACCOUNT,
+    method::DISCOVER_ACCOUNT,
+    method::TEST_SMTP,
+    method::COUNT_ARCHIVE,
+    method::ADD_ACCOUNT,
+    method::SET_FOLDER_ROLES,
+    method::PREPARE_ACTIVATION,
+    method::ACTIVATE_ACCOUNT,
+    method::RENAME_ACCOUNT,
+    method::REMOVE_ACCOUNT,
+    method::PREPARE_DRAFT,
+    method::SEND_DRAFT,
+    method::CANCEL_SEND,
+];
+
+/// Whether `source` is a person's client.
+pub(crate) fn is_human(source: Source) -> bool {
+    matches!(source, Source::App | Source::Cli | Source::Tui)
+}
+
+/// `Ok` for a person's client, the refusal otherwise: the one definition
+/// the handlers call.
+pub(crate) fn human(source: Source) -> Result<(), RpcError> {
+    if is_human(source) { Ok(()) } else { Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE)) }
+}
+
 /// Whether `source` may call `method`; the refusal otherwise.
 pub(crate) fn check(source: Source, method: &str) -> Result<(), RpcError> {
     match source {
         Source::Mcp if !MCP_ALLOWED.contains(&method) => Err(RpcError::new(error_code::FORBIDDEN, refusal(method))),
+        _ if !is_human(source) && PEOPLE_ONLY.contains(&method) => Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE)),
         // The update of NiceMailer is the app's: it is the one Sparkle
         // replaces (`mise-a-jour.md`, section 3). Another client that put
         // the core in maintenance would only lock everyone out.
@@ -156,6 +194,37 @@ mod tests {
         for m in MCP_ALLOWED {
             assert!(methods.iter().any(|c| c == m), "{m} is not a method of the contract");
         }
+    }
+
+    /// Every source against every method of the contract: the table of
+    /// `architecture.md`, section 9, "Droits par client", in one place.
+    #[test]
+    fn the_rights_of_every_source_on_every_method() {
+        for m in &contract_methods() {
+            let m = m.as_str();
+            if SESSION.contains(&m) {
+                continue;
+            }
+            let update = UPDATE_METHODS.contains(&m);
+            let people = PEOPLE_ONLY.contains(&m);
+            let expected = [
+                (Source::App, true),
+                (Source::Cli, !update),
+                (Source::Tui, !update),
+                (Source::Web, !update && !people),
+                (Source::Mcp, MCP_ALLOWED.contains(&m)),
+            ];
+            for (source, allowed) in expected {
+                assert_eq!(check(source, m).is_ok(), allowed, "{m} for {source:?}");
+            }
+            // An agent is never let into what only people do.
+            assert!(!(people && MCP_ALLOWED.contains(&m)), "{m} is both for people only and open to agents");
+        }
+        for m in PEOPLE_ONLY {
+            assert!(contract_methods().iter().any(|c| c == m), "{m} is not a method of the contract");
+        }
+        assert!(human(Source::Cli).is_ok());
+        assert_eq!(human(Source::Web).unwrap_err().code, error_code::FORBIDDEN);
     }
 
     #[test]

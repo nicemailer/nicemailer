@@ -193,14 +193,8 @@ pub async fn list_senders(core: &Arc<Core>) -> Result<ListSendersResult, RpcErro
     Ok(ListSendersResult { items })
 }
 
-/// Only a human's client sends, in v1.
-fn human(source: Source) -> Result<(), RpcError> {
-    if matches!(source, Source::App | Source::Cli | Source::Tui) {
-        Ok(())
-    } else {
-        Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE))
-    }
-}
+/// Only a person's client (`rights.rs`, the one definition).
+use crate::rights::human;
 
 /// Who may start a draft: a human's client, or an AI agent
 /// (`mcp.md`, section 4: it prepares drafts, the user reviews them).

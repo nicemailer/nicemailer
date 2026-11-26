@@ -37,14 +37,8 @@ use nm_store::setup::{ArchiveCriteria, RoleAssignment};
 
 use crate::{Core, with_store};
 
-/// Only a human enters a password or deletes an account.
-fn human(source: Source) -> Result<(), RpcError> {
-    if matches!(source, Source::App | Source::Cli | Source::Tui) {
-        Ok(())
-    } else {
-        Err(RpcError::new(error_code::FORBIDDEN, reason::RESERVED_TO_PEOPLE))
-    }
-}
+/// Only a person's client (`rights.rs`, the one definition).
+use crate::rights::human;
 
 /// A failure of the IMAP server, its answer cited as it is.
 fn server(e: impl std::fmt::Display) -> RpcError {
